@@ -2,7 +2,9 @@ import { useState, useEffect } from 'react'
 import { Routes, Route, Link } from 'react-router-dom'
 import './App.css'
 
-const API_BASE = '/https://wnlul5avuii4hh4crehsmljhzq0ikxwx.lambda-url.us-east-1.on.aws/'
+// Call the Lambda API directly from the browser
+const API_BASE =
+  'https://wnlul5avuii4hh4crehsmljhzq0ikxwx.lambda-url.us-east-1.on.aws'
 
 function useApi(endpoint, params) {
   const [data, setData] = useState(null)
