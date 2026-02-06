@@ -92,7 +92,7 @@ function LandingPage() {
 }
 
 function Dashboard() {
-  const tradability = useApi('/tradeability-score', { limit: 20 })
+  const tradability = useApi('/tradeability-score')
 
   return (
     <div className="dashboard">
