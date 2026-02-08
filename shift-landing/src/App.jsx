@@ -318,7 +318,7 @@ function Dashboard() {
         </div>
       </div>
 
-      <div className="panel" style={{ marginTop: '1rem', marginBottom: '1.5rem' }}>
+      <div className="panel" style={{ marginTop: '1rem' }}>
         <div className="panel-header">
           <div className="panel-title">Top Events by Open Interest</div>
           <div className="panel-status">/top_events_open_interest</div>
@@ -367,6 +367,69 @@ function Dashboard() {
                 </table>
               </div>
             )}
+        </div>
+      </div>
+
+      <div className="panel" style={{ marginTop: '1rem', marginBottom: '1.5rem' }}>
+        <div className="panel-header">
+          <div className="panel-title">Global 6h Deltas (Raw)</div>
+          <div className="panel-status">/global-6h-deltas</div>
+        </div>
+        <div className="panel-body">
+          {globalDeltas.loading && (
+            <div className="loading">Loading global deltas…</div>
+          )}
+          {globalDeltas.error && (
+            <div className="error">{globalDeltas.error.message}</div>
+          )}
+          {Array.isArray(globalDeltas.data) && globalDeltas.data.length > 0 && (
+            <div className="markets-table-scroll">
+              <table className="markets-table">
+                <thead>
+                  <tr>
+                    <th>Snapshot</th>
+                    <th>Δ Volume 6h</th>
+                    <th>Δ OI 6h</th>
+                    <th>Δ Priced 6h</th>
+                    <th>Δ Spread 6h</th>
+                    <th>Δ Wide 6h</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {globalDeltas.data.map((row, idx) => (
+                    <tr key={row.snap_ts ?? idx}>
+                      <td>{row.snap_ts}</td>
+                      <td>
+                        {typeof row.d_volume_6h === 'number'
+                          ? row.d_volume_6h.toLocaleString('en-US')
+                          : row.d_volume_6h}
+                      </td>
+                      <td>
+                        {typeof row.d_oi_6h === 'number'
+                          ? row.d_oi_6h.toLocaleString('en-US')
+                          : row.d_oi_6h}
+                      </td>
+                      <td>
+                        {typeof row.d_priced_6h === 'number'
+                          ? row.d_priced_6h.toLocaleString('en-US')
+                          : row.d_priced_6h}
+                      </td>
+                      <td>
+                        {typeof row.d_spread_6h === 'number'
+                          ? row.d_spread_6h.toFixed(3)
+                          : row.d_spread_6h}
+                      </td>
+                      <td>
+                        {typeof row.d_wide_6h === 'number'
+                          ? row.d_wide_6h.toLocaleString('en-US')
+                          : row.d_wide_6h}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
     </div>
