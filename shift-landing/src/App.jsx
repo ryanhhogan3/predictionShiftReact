@@ -95,6 +95,8 @@ function LandingPage() {
 
 function Dashboard() {
   const tradability = useApi('/tradeability-score')
+  const eventsByVolume = useApi('/top_events_volume')
+  const eventsByOpenInterest = useApi('/top_events_open_interest')
 
   return (
     <div className="dashboard">
@@ -190,6 +192,98 @@ function Dashboard() {
             results. Always do your own research and consult a qualified
             advisor before making investment decisions.
           </div>
+        </div>
+      </div>
+
+      <div className="panel" style={{ marginTop: '1rem' }}>
+        <div className="panel-header">
+          <div className="panel-title">Top Events by Volume</div>
+          <div className="panel-status">/top_events_volume</div>
+        </div>
+        <div className="panel-body">
+          {eventsByVolume.loading && (
+            <div className="loading">Loading events…</div>
+          )}
+          {eventsByVolume.error && (
+            <div className="error">{eventsByVolume.error.message}</div>
+          )}
+          {Array.isArray(eventsByVolume.data) &&
+            eventsByVolume.data.length > 0 && (
+              <table className="markets-table">
+                <thead>
+                  <tr>
+                    <th>Event</th>
+                    <th>Markets</th>
+                    <th>Total Volume</th>
+                    <th>Avg Spread</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {eventsByVolume.data.map((row) => (
+                    <tr key={row.event_ticker}>
+                      <td>{row.event_ticker}</td>
+                      <td>{row.n_markets}</td>
+                      <td>
+                        {typeof row.total_volume === 'number'
+                          ? row.total_volume.toLocaleString('en-US')
+                          : row.total_volume}
+                      </td>
+                      <td>
+                        {typeof row.avg_spread_ticks === 'number'
+                          ? row.avg_spread_ticks.toFixed(2)
+                          : row.avg_spread_ticks}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+        </div>
+      </div>
+
+      <div className="panel" style={{ marginTop: '1rem', marginBottom: '1.5rem' }}>
+        <div className="panel-header">
+          <div className="panel-title">Top Events by Open Interest</div>
+          <div className="panel-status">/top_events_open_interest</div>
+        </div>
+        <div className="panel-body">
+          {eventsByOpenInterest.loading && (
+            <div className="loading">Loading events…</div>
+          )}
+          {eventsByOpenInterest.error && (
+            <div className="error">{eventsByOpenInterest.error.message}</div>
+          )}
+          {Array.isArray(eventsByOpenInterest.data) &&
+            eventsByOpenInterest.data.length > 0 && (
+              <table className="markets-table">
+                <thead>
+                  <tr>
+                    <th>Event</th>
+                    <th>Markets</th>
+                    <th>Total Open Interest</th>
+                    <th>Avg Spread</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {eventsByOpenInterest.data.map((row) => (
+                    <tr key={row.event_ticker}>
+                      <td>{row.event_ticker}</td>
+                      <td>{row.n_markets}</td>
+                      <td>
+                        {typeof row.total_open_interest === 'number'
+                          ? row.total_open_interest.toLocaleString('en-US')
+                          : row.total_open_interest}
+                      </td>
+                      <td>
+                        {typeof row.avg_spread_ticks === 'number'
+                          ? row.avg_spread_ticks.toFixed(2)
+                          : row.avg_spread_ticks}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
         </div>
       </div>
     </div>
