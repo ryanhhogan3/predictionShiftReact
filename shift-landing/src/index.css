@@ -304,6 +304,12 @@ h1 {
   );
 }
 
+.markets-table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .dashboard-cta {
   margin-top: 1.5rem;
   padding-top: 1.25rem;
@@ -326,6 +332,28 @@ h1 {
   font-size: 0.7rem;
   color: #7c809a;
   line-height: 1.5;
+}
+
+.vix-chart-wrapper {
+  width: 100%;
+  height: 72px;
+}
+
+.vix-chart {
+  width: 100%;
+  height: 100%;
+}
+
+.vix-chart-path {
+  fill: none;
+  stroke: #6f8cff;
+  stroke-width: 1.6;
+}
+
+.vix-chart-label {
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  color: #b8bbcc;
 }
 
 /* ---------- Mobile adjustments ---------- */
@@ -361,6 +389,10 @@ h1 {
   .markets-table th,
   .markets-table td {
     padding: 0.3rem 0.25rem;
+  }
+
+  .vix-chart-wrapper {
+    height: 56px;
   }
 }
 
