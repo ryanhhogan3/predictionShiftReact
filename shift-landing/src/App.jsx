@@ -307,7 +307,7 @@ function Dashboard() {
                             : row.avg_spread_ticks}
                         </td>
                         <td>
-                          <span className="tradability-blur">XX</span>
+                          <span className="tradability-blur">{row.event_ticker}</span>
                         </td>
                       </tr>
                     ))}
@@ -359,7 +359,7 @@ function Dashboard() {
                             : row.avg_spread_ticks}
                         </td>
                         <td>
-                          <span className="tradability-blur">XX</span>
+                          <span className="tradability-blur">{row.event_ticker}</span>
                         </td>
                       </tr>
                     ))}
