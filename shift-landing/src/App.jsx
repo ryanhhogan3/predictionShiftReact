@@ -181,6 +181,63 @@ function Dashboard() {
 
       <div className="panel" style={{ marginTop: '1rem' }}>
         <div className="panel-header">
+          <div className="panel-title">Market Movers</div>
+        </div>
+        <div className="panel-body">
+          {marketMovers.loading && (
+            <div className="loading">Loading market movers…</div>
+          )}
+          {marketMovers.error && (
+            <div className="error">{marketMovers.error.message}</div>
+          )}
+          {Array.isArray(marketMovers.data) &&
+            marketMovers.data.length > 0 && (
+              <div className="markets-table-scroll">
+                <table className="markets-table">
+                  <thead>
+                    <tr>
+                      <th>Market Ticker</th>
+                      <th>Old Price</th>
+                      <th>New Price</th>
+                      <th>Δ Price</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {marketMovers.data.slice(0, 15).map((row, idx) => (
+                      <tr key={row.market_ticker ?? idx}>
+                        <td>{row.market_ticker}</td>
+                        <td>
+                          {typeof row.old_price === 'number'
+                            ? row.old_price.toFixed(1)
+                            : row.old_price}
+                        </td>
+                        <td>
+                          {typeof row.new_price === 'number'
+                            ? row.new_price.toFixed(1)
+                            : row.new_price}
+                        </td>
+                        <td>
+                          {typeof row.price_diff === 'number'
+                            ? row.price_diff.toFixed(1)
+                            : row.price_diff}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          {Array.isArray(marketMovers.data) &&
+            marketMovers.data.length === 0 &&
+            !marketMovers.loading &&
+            !marketMovers.error && (
+              <span className="muted">No major market movers.</span>
+            )}
+        </div>
+      </div>
+
+      <div className="panel" style={{ marginTop: '1rem' }}>
+        <div className="panel-header">
           <div className="panel-title">Top Events by Volume</div>
         </div>
         <div className="panel-body">
@@ -374,63 +431,6 @@ function Dashboard() {
           </div>
         </div>
 
-        <div className="panel" style={{ marginTop: '1rem' }}>
-          <div className="panel-header">
-            <div className="panel-title">Market Movers</div>
-          </div>
-          <div className="panel-body">
-            {marketMovers.loading && (
-              <div className="loading">Loading market movers…</div>
-            )}
-            {marketMovers.error && (
-              <div className="error">{marketMovers.error.message}</div>
-            )}
-            {Array.isArray(marketMovers.data) &&
-              marketMovers.data.length > 0 && (
-                <div className="markets-table-scroll">
-                  <table className="markets-table">
-                    <thead>
-                      <tr>
-                        <th>Market Ticker</th>
-                        <th>Old Price</th>
-                        <th>New Price</th>
-                        <th>Δ Price</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {marketMovers.data.slice(0, 15).map((row, idx) => (
-                        <tr key={row.market_ticker ?? idx}>
-                          <td>{row.market_ticker}</td>
-                          <td>
-                            {typeof row.old_price === 'number'
-                              ? row.old_price.toFixed(1)
-                              : row.old_price}
-                          </td>
-                          <td>
-                            {typeof row.new_price === 'number'
-                              ? row.new_price.toFixed(1)
-                              : row.new_price}
-                          </td>
-                          <td>
-                            {typeof row.price_diff === 'number'
-                              ? row.price_diff.toFixed(1)
-                              : row.price_diff}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            {Array.isArray(marketMovers.data) &&
-              marketMovers.data.length === 0 &&
-              !marketMovers.loading &&
-              !marketMovers.error && (
-                <span className="muted">No major market movers.</span>
-              )}
-          </div>
-        </div>
-
       <div className="panel" style={{ marginTop: '1rem', marginBottom: '1.5rem' }}>
         <div className="panel-header">
           <div className="panel-title">Global 6h Deltas (Raw)</div>
@@ -456,7 +456,7 @@ function Dashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {globalDeltas.data.map((row, idx) => (
+                  {globalDeltas.data.slice(0, 15).map((row, idx) => (
                     <tr key={row.snap_ts ?? idx}>
                       <td>{row.snap_ts}</td>
                       <td>
