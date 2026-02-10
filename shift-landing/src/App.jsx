@@ -94,9 +94,7 @@ function LandingPage() {
 }
 
 function Dashboard() {
-  const tradability = useApi('/tradeability-score')
   const eventsByVolume = useApi('/top_events_volume')
-  const eventsByOpenInterest = useApi('/top_events_open_interest')
   const spreadBlowouts = useApi('/markets/spread_blowouts')
   const expiringSoon = useApi('/markets/expiring_soon')
   const marketMovers = useApi('/market_movers')
@@ -144,7 +142,6 @@ function Dashboard() {
       <div className="panel" style={{ marginTop: '1.5rem' }}>
         <div className="panel-header">
           <div className="panel-title">Market Shift Index (6h)</div>
-          <div className="panel-status">/global-6h-deltas</div>
         </div>
         <div className="panel-body">
           {globalDeltas.loading && (
@@ -172,107 +169,19 @@ function Dashboard() {
               Current index: <strong>{latestIndex.toFixed(1)}</strong>
             </div>
           )}
-        </div>
-      </div>
-
-      <div className="panel" style={{ marginTop: '1rem' }}>
-        <div className="panel-header">
-          <div className="panel-title">Top Tradability Markets</div>
-          <div className="panel-status">/tradability-score</div>
-        </div>
-        <div className="panel-body">
-          {tradability.loading && (
-            <div className="loading">Loading markets…</div>
-          )}
-          {tradability.error && (
-            <div className="error">{tradability.error.message}</div>
-          )}
-          {Array.isArray(tradability.data) && tradability.data.length > 0 && (
-            <div className="markets-table-wrapper">
-              <table className="markets-table">
-                <thead>
-                  <tr>
-                    <th>Title</th>
-                    <th>Volume</th>
-                    <th>Open Interest</th>
-                    <th>Tradability</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {tradability.data.map((row) => (
-                    <tr key={row.market_ticker}>
-                      <td>{row.title}</td>
-                      <td>
-                        {typeof row.volume === 'number'
-                          ? row.volume.toLocaleString('en-US')
-                          : row.volume}
-                      </td>
-                      <td>
-                        {typeof row.open_interest === 'number'
-                          ? row.open_interest.toLocaleString('en-US')
-                          : row.open_interest}
-                      </td>
-                      <td>
-                        {typeof row.tradability_score === 'number'
-                          ? (
-                              <span className="tradability-blur">
-                                {row.tradability_score.toFixed(2)}
-                              </span>
-                            )
-                          : (
-                              <span className="tradability-blur">
-                                {row.tradability_score}
-                              </span>
-                            )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          {Array.isArray(tradability.data) && tradability.data.length === 0 &&
-            !tradability.loading &&
-            !tradability.error && (
-              <span className="muted">No markets available.</span>
-            )}
-
-          <div className="dashboard-cta">
-            <h3>Get these shifts before they move headlines.</h3>
-            <p>
-              We send one short, insight-heavy email per day with the most
-              interesting moves in prediction markets.
-            </p>
-            <form
-              className="signup"
-              method="POST"
-              action="https://formspree.io/f/maqodkvw"
-            >
-              <input
-                name="email"
-                type="email"
-                placeholder="you@email.com"
-                required
-              />
-              <button type="submit">Notify me</button>
-            </form>
-            <p className="fineprint">No spam. One email per day.</p>
-          </div>
-
-          <div className="legal-disclaimer">
-            This site provides informational market data only and does not
-            constitute financial, investment, or trading advice. Past market
-            performance and tradability scores are not indicative of future
-            results. Always do your own research and consult a qualified
-            advisor before making investment decisions.
-          </div>
+          <p className="panel-methodology">
+            This index combines 6-hour changes in trading volume, open
+            interest, and market breadth into a single normalized score.
+            Higher values generally correspond to periods of elevated
+            prediction-market activity and crowd repricing, which tend to
+            coincide with higher perceived volatility.
+          </p>
         </div>
       </div>
 
       <div className="panel" style={{ marginTop: '1rem' }}>
         <div className="panel-header">
           <div className="panel-title">Top Events by Volume</div>
-          <div className="panel-status">/top_events_volume</div>
         </div>
         <div className="panel-body">
           {eventsByVolume.loading && (
@@ -323,46 +232,65 @@ function Dashboard() {
 
       <div className="panel" style={{ marginTop: '1rem' }}>
         <div className="panel-header">
-          <div className="panel-title">Top Events by Open Interest</div>
-          <div className="panel-status">/top_events_open_interest</div>
+          <div className="panel-title">Spread Blowouts</div>
         </div>
         <div className="panel-body">
-          {eventsByOpenInterest.loading && (
-            <div className="loading">Loading events…</div>
+          {spreadBlowouts.loading && (
+            <div className="loading">Loading spread blowouts…</div>
           )}
-          {eventsByOpenInterest.error && (
-            <div className="error">{eventsByOpenInterest.error.message}</div>
+          {spreadBlowouts.error && (
+            <div className="error">{spreadBlowouts.error.message}</div>
           )}
-          {Array.isArray(eventsByOpenInterest.data) &&
-            eventsByOpenInterest.data.length > 0 && (
+          {Array.isArray(spreadBlowouts.data) &&
+            spreadBlowouts.data.length > 0 && (
               <div className="markets-table-scroll">
                 <table className="markets-table">
                   <thead>
                     <tr>
-                      <th>Event</th>
-                      <th>Markets</th>
-                      <th>Total Open Interest</th>
-                      <th>Avg Spread</th>
-                      <th>Order Flow Imbalance Link</th>
+                      <th>Market Ticker</th>
+                      <th>Event Ticker</th>
+                      <th>Spread Now</th>
+                      <th>Spread Prev</th>
+                      <th>Δ Spread</th>
+                      <th>Mid Now</th>
+                      <th>Mid Prev</th>
+                      <th>Δ Mid</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {eventsByOpenInterest.data.slice(0, 15).map((row) => (
-                      <tr key={row.event_ticker}>
+                    {spreadBlowouts.data.slice(0, 10).map((row, idx) => (
+                      <tr key={row.market_ticker ?? idx}>
+                        <td>{row.market_ticker}</td>
                         <td>{row.event_ticker}</td>
-                        <td>{row.n_markets}</td>
                         <td>
-                          {typeof row.total_open_interest === 'number'
-                            ? row.total_open_interest.toLocaleString('en-US')
-                            : row.total_open_interest}
+                          {typeof row.spread_now === 'number'
+                            ? row.spread_now.toFixed(1)
+                            : row.spread_now}
                         </td>
                         <td>
-                          {typeof row.avg_spread_ticks === 'number'
-                            ? row.avg_spread_ticks.toFixed(2)
-                            : row.avg_spread_ticks}
+                          {typeof row.spread_prev === 'number'
+                            ? row.spread_prev.toFixed(1)
+                            : row.spread_prev}
                         </td>
                         <td>
-                          <span className="tradability-blur">{row.event_ticker}</span>
+                          {typeof row.d_spread === 'number'
+                            ? row.d_spread.toFixed(1)
+                            : row.d_spread}
+                        </td>
+                        <td>
+                          {typeof row.mid_now === 'number'
+                            ? row.mid_now.toFixed(1)
+                            : row.mid_now}
+                        </td>
+                        <td>
+                          {typeof row.mid_prev === 'number'
+                            ? row.mid_prev.toFixed(1)
+                            : row.mid_prev}
+                        </td>
+                        <td>
+                          {typeof row.d_mid === 'number'
+                            ? row.d_mid.toFixed(1)
+                            : row.d_mid}
                         </td>
                       </tr>
                     ))}
@@ -370,91 +298,18 @@ function Dashboard() {
                 </table>
               </div>
             )}
+          {Array.isArray(spreadBlowouts.data) &&
+            spreadBlowouts.data.length === 0 &&
+            !spreadBlowouts.loading &&
+            !spreadBlowouts.error && (
+              <span className="muted">No spread blowouts detected.</span>
+            )}
         </div>
       </div>
 
         <div className="panel" style={{ marginTop: '1rem' }}>
           <div className="panel-header">
-            <div className="panel-title">Spread Blowouts</div>
-            <div className="panel-status">/markets/spread_blowouts</div>
-          </div>
-          <div className="panel-body">
-            {spreadBlowouts.loading && (
-              <div className="loading">Loading spread blowouts…</div>
-            )}
-            {spreadBlowouts.error && (
-              <div className="error">{spreadBlowouts.error.message}</div>
-            )}
-            {Array.isArray(spreadBlowouts.data) &&
-              spreadBlowouts.data.length > 0 && (
-                <div className="markets-table-scroll">
-                  <table className="markets-table">
-                    <thead>
-                      <tr>
-                        <th>Market Ticker</th>
-                        <th>Event Ticker</th>
-                        <th>Spread Now</th>
-                        <th>Spread Prev</th>
-                        <th>Δ Spread</th>
-                        <th>Mid Now</th>
-                        <th>Mid Prev</th>
-                        <th>Δ Mid</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {spreadBlowouts.data.map((row, idx) => (
-                        <tr key={row.market_ticker ?? idx}>
-                          <td>{row.market_ticker}</td>
-                          <td>{row.event_ticker}</td>
-                          <td>
-                            {typeof row.spread_now === 'number'
-                              ? row.spread_now.toFixed(1)
-                              : row.spread_now}
-                          </td>
-                          <td>
-                            {typeof row.spread_prev === 'number'
-                              ? row.spread_prev.toFixed(1)
-                              : row.spread_prev}
-                          </td>
-                          <td>
-                            {typeof row.d_spread === 'number'
-                              ? row.d_spread.toFixed(1)
-                              : row.d_spread}
-                          </td>
-                          <td>
-                            {typeof row.mid_now === 'number'
-                              ? row.mid_now.toFixed(1)
-                              : row.mid_now}
-                          </td>
-                          <td>
-                            {typeof row.mid_prev === 'number'
-                              ? row.mid_prev.toFixed(1)
-                              : row.mid_prev}
-                          </td>
-                          <td>
-                            {typeof row.d_mid === 'number'
-                              ? row.d_mid.toFixed(1)
-                              : row.d_mid}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            {Array.isArray(spreadBlowouts.data) &&
-              spreadBlowouts.data.length === 0 &&
-              !spreadBlowouts.loading &&
-              !spreadBlowouts.error && (
-                <span className="muted">No spread blowouts detected.</span>
-              )}
-          </div>
-        </div>
-
-        <div className="panel" style={{ marginTop: '1rem' }}>
-          <div className="panel-header">
             <div className="panel-title">Markets Expiring Soon</div>
-            <div className="panel-status">/markets/expiring_soon</div>
           </div>
           <div className="panel-body">
             {expiringSoon.loading && (
@@ -479,7 +334,7 @@ function Dashboard() {
                       </tr>
                     </thead>
                     <tbody>
-                      {expiringSoon.data.map((row, idx) => (
+                      {expiringSoon.data.slice(0, 10).map((row, idx) => (
                         <tr key={row.market_ticker ?? idx}>
                           <td>{row.market_ticker}</td>
                           <td>{row.event_ticker}</td>
@@ -522,7 +377,6 @@ function Dashboard() {
         <div className="panel" style={{ marginTop: '1rem' }}>
           <div className="panel-header">
             <div className="panel-title">Market Movers</div>
-            <div className="panel-status">/market_movers</div>
           </div>
           <div className="panel-body">
             {marketMovers.loading && (
@@ -544,7 +398,7 @@ function Dashboard() {
                       </tr>
                     </thead>
                     <tbody>
-                      {marketMovers.data.map((row, idx) => (
+                      {marketMovers.data.slice(0, 15).map((row, idx) => (
                         <tr key={row.market_ticker ?? idx}>
                           <td>{row.market_ticker}</td>
                           <td>
@@ -580,7 +434,6 @@ function Dashboard() {
       <div className="panel" style={{ marginTop: '1rem', marginBottom: '1.5rem' }}>
         <div className="panel-header">
           <div className="panel-title">Global 6h Deltas (Raw)</div>
-          <div className="panel-status">/global-6h-deltas</div>
         </div>
         <div className="panel-body">
           {globalDeltas.loading && (
