@@ -97,6 +97,9 @@ function Dashboard() {
   const tradability = useApi('/tradeability-score')
   const eventsByVolume = useApi('/top_events_volume')
   const eventsByOpenInterest = useApi('/top_events_open_interest')
+  const spreadBlowouts = useApi('/markets/spread_blowouts')
+  const expiringSoon = useApi('/markets/expiring_soon')
+  const marketMovers = useApi('/market_movers')
   const globalDeltas = useApi('/global-6h-deltas', { limit: 30 })
 
   let vixPoints = ''
@@ -369,6 +372,210 @@ function Dashboard() {
             )}
         </div>
       </div>
+
+        <div className="panel" style={{ marginTop: '1rem' }}>
+          <div className="panel-header">
+            <div className="panel-title">Spread Blowouts</div>
+            <div className="panel-status">/markets/spread_blowouts</div>
+          </div>
+          <div className="panel-body">
+            {spreadBlowouts.loading && (
+              <div className="loading">Loading spread blowouts…</div>
+            )}
+            {spreadBlowouts.error && (
+              <div className="error">{spreadBlowouts.error.message}</div>
+            )}
+            {Array.isArray(spreadBlowouts.data) &&
+              spreadBlowouts.data.length > 0 && (
+                <div className="markets-table-scroll">
+                  <table className="markets-table">
+                    <thead>
+                      <tr>
+                        <th>Market Ticker</th>
+                        <th>Event Ticker</th>
+                        <th>Spread Now</th>
+                        <th>Spread Prev</th>
+                        <th>Δ Spread</th>
+                        <th>Mid Now</th>
+                        <th>Mid Prev</th>
+                        <th>Δ Mid</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {spreadBlowouts.data.map((row, idx) => (
+                        <tr key={row.market_ticker ?? idx}>
+                          <td>{row.market_ticker}</td>
+                          <td>{row.event_ticker}</td>
+                          <td>
+                            {typeof row.spread_now === 'number'
+                              ? row.spread_now.toFixed(1)
+                              : row.spread_now}
+                          </td>
+                          <td>
+                            {typeof row.spread_prev === 'number'
+                              ? row.spread_prev.toFixed(1)
+                              : row.spread_prev}
+                          </td>
+                          <td>
+                            {typeof row.d_spread === 'number'
+                              ? row.d_spread.toFixed(1)
+                              : row.d_spread}
+                          </td>
+                          <td>
+                            {typeof row.mid_now === 'number'
+                              ? row.mid_now.toFixed(1)
+                              : row.mid_now}
+                          </td>
+                          <td>
+                            {typeof row.mid_prev === 'number'
+                              ? row.mid_prev.toFixed(1)
+                              : row.mid_prev}
+                          </td>
+                          <td>
+                            {typeof row.d_mid === 'number'
+                              ? row.d_mid.toFixed(1)
+                              : row.d_mid}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            {Array.isArray(spreadBlowouts.data) &&
+              spreadBlowouts.data.length === 0 &&
+              !spreadBlowouts.loading &&
+              !spreadBlowouts.error && (
+                <span className="muted">No spread blowouts detected.</span>
+              )}
+          </div>
+        </div>
+
+        <div className="panel" style={{ marginTop: '1rem' }}>
+          <div className="panel-header">
+            <div className="panel-title">Markets Expiring Soon</div>
+            <div className="panel-status">/markets/expiring_soon</div>
+          </div>
+          <div className="panel-body">
+            {expiringSoon.loading && (
+              <div className="loading">Loading expiring markets…</div>
+            )}
+            {expiringSoon.error && (
+              <div className="error">{expiringSoon.error.message}</div>
+            )}
+            {Array.isArray(expiringSoon.data) &&
+              expiringSoon.data.length > 0 && (
+                <div className="markets-table-scroll">
+                  <table className="markets-table">
+                    <thead>
+                      <tr>
+                        <th>Market Ticker</th>
+                        <th>Event Ticker</th>
+                        <th>Expiration Time</th>
+                        <th>Open Interest</th>
+                        <th>Volume</th>
+                        <th>Spread (ticks)</th>
+                        <th>Mid</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {expiringSoon.data.map((row, idx) => (
+                        <tr key={row.market_ticker ?? idx}>
+                          <td>{row.market_ticker}</td>
+                          <td>{row.event_ticker}</td>
+                          <td>{row.expiration_time}</td>
+                          <td>
+                            {typeof row.open_interest === 'number'
+                              ? row.open_interest.toLocaleString('en-US')
+                              : row.open_interest}
+                          </td>
+                          <td>
+                            {typeof row.volume === 'number'
+                              ? row.volume.toLocaleString('en-US')
+                              : row.volume}
+                          </td>
+                          <td>
+                            {typeof row.spread_ticks === 'number'
+                              ? row.spread_ticks.toFixed(1)
+                              : row.spread_ticks}
+                          </td>
+                          <td>
+                            {typeof row.mid === 'number'
+                              ? row.mid.toFixed(1)
+                              : row.mid}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            {Array.isArray(expiringSoon.data) &&
+              expiringSoon.data.length === 0 &&
+              !expiringSoon.loading &&
+              !expiringSoon.error && (
+                <span className="muted">No expiring markets found.</span>
+              )}
+          </div>
+        </div>
+
+        <div className="panel" style={{ marginTop: '1rem' }}>
+          <div className="panel-header">
+            <div className="panel-title">Market Movers</div>
+            <div className="panel-status">/market_movers</div>
+          </div>
+          <div className="panel-body">
+            {marketMovers.loading && (
+              <div className="loading">Loading market movers…</div>
+            )}
+            {marketMovers.error && (
+              <div className="error">{marketMovers.error.message}</div>
+            )}
+            {Array.isArray(marketMovers.data) &&
+              marketMovers.data.length > 0 && (
+                <div className="markets-table-scroll">
+                  <table className="markets-table">
+                    <thead>
+                      <tr>
+                        <th>Market Ticker</th>
+                        <th>Old Price</th>
+                        <th>New Price</th>
+                        <th>Δ Price</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {marketMovers.data.map((row, idx) => (
+                        <tr key={row.market_ticker ?? idx}>
+                          <td>{row.market_ticker}</td>
+                          <td>
+                            {typeof row.old_price === 'number'
+                              ? row.old_price.toFixed(1)
+                              : row.old_price}
+                          </td>
+                          <td>
+                            {typeof row.new_price === 'number'
+                              ? row.new_price.toFixed(1)
+                              : row.new_price}
+                          </td>
+                          <td>
+                            {typeof row.price_diff === 'number'
+                              ? row.price_diff.toFixed(1)
+                              : row.price_diff}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            {Array.isArray(marketMovers.data) &&
+              marketMovers.data.length === 0 &&
+              !marketMovers.loading &&
+              !marketMovers.error && (
+                <span className="muted">No major market movers.</span>
+              )}
+          </div>
+        </div>
 
       <div className="panel" style={{ marginTop: '1rem', marginBottom: '1.5rem' }}>
         <div className="panel-header">
