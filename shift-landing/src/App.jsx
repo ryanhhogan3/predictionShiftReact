@@ -506,13 +506,59 @@ function ScreenerPage() {
     sortBy: 'tradability_score',
     sortDir: 'desc',
   })
-  const [queryParams, setQueryParams] = useState({})
   const [refreshNonce, setRefreshNonce] = useState(0)
+  const [allRows, setAllRows] = useState([])
+  const [filteredRows, setFilteredRows] = useState([])
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(25)
 
   const screener = useApi('/markets/screener', {
-    ...queryParams,
+    limit: 250,
     _refresh: refreshNonce,
   })
+
+  useEffect(() => {
+    if (Array.isArray(screener.data)) {
+      setAllRows(screener.data)
+      setFilteredRows(screener.data)
+      setPage(1)
+    }
+  }, [screener.data])
+
+  const passMin = (value, minValue) => {
+    if (minValue === '' || minValue === null || minValue === undefined) {
+      return true
+    }
+    const min = Number(minValue)
+    if (Number.isNaN(min)) return true
+    if (typeof value === 'number') return value >= min
+    const numericValue = Number(value)
+    if (Number.isNaN(numericValue)) return false
+    return numericValue >= min
+  }
+
+  const sortRows = (rows) => {
+    const sorted = [...rows]
+    sorted.sort((a, b) => {
+      const aVal = a[form.sortBy]
+      const bVal = b[form.sortBy]
+
+      if (typeof aVal === 'string' && typeof bVal === 'string') {
+        return form.sortDir === 'asc'
+          ? aVal.localeCompare(bVal)
+          : bVal.localeCompare(aVal)
+      }
+
+      const aNum = Number(aVal)
+      const bNum = Number(bVal)
+      const safeA = Number.isFinite(aNum) ? aNum : -Infinity
+      const safeB = Number.isFinite(bNum) ? bNum : -Infinity
+
+      return form.sortDir === 'asc' ? safeA - safeB : safeB - safeA
+    })
+
+    return sorted
+  }
 
   const handleChange = (event) => {
     const { name, value } = event.target
@@ -520,20 +566,17 @@ function ScreenerPage() {
   }
 
   const applyFilters = () => {
-    const next = {}
+    const filtered = allRows.filter((row) =>
+      passMin(row.volume, form.minVolume) &&
+      passMin(row.open_interest, form.minOpenInterest) &&
+      passMin(row.spread_ticks, form.minSpread) &&
+      passMin(row.tradability_score, form.minTradability) &&
+      passMin(row.churn_rate, form.minChurn)
+    )
 
-    if (form.minVolume) next.min_volume = Number(form.minVolume)
-    if (form.minOpenInterest)
-      next.min_open_interest = Number(form.minOpenInterest)
-    if (form.minSpread) next.min_spread_ticks = Number(form.minSpread)
-    if (form.minTradability)
-      next.min_tradability_score = Number(form.minTradability)
-    if (form.minChurn) next.min_churn_rate = Number(form.minChurn)
-    if (form.sortBy) next.sort_by = form.sortBy
-    if (form.sortDir) next.sort_dir = form.sortDir
-
-    setQueryParams(next)
-    setRefreshNonce((n) => n + 1)
+    const sorted = sortRows(filtered)
+    setFilteredRows(sorted)
+    setPage(1)
   }
 
   const resetFilters = () => {
@@ -546,13 +589,25 @@ function ScreenerPage() {
       sortBy: 'tradability_score',
       sortDir: 'desc',
     })
-    setQueryParams({})
-    setRefreshNonce((n) => n + 1)
+    setFilteredRows(allRows)
+    setPage(1)
   }
 
   const refreshOnly = () => {
     setRefreshNonce((n) => n + 1)
   }
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil((filteredRows?.length ?? 0) / pageSize) || 1,
+  )
+
+  useEffect(() => {
+    setPage((prev) => Math.min(prev, totalPages))
+  }, [totalPages])
+
+  const pageStart = (page - 1) * pageSize
+  const pageRows = filteredRows.slice(pageStart, pageStart + pageSize)
 
   return (
     <div className="dashboard">
@@ -673,8 +728,64 @@ function ScreenerPage() {
           {screener.error && (
             <div className="error">{screener.error.message}</div>
           )}
-          {Array.isArray(screener.data) && screener.data.length > 0 && (
+          {filteredRows.length > 0 && (
             <div className="markets-table-scroll">
+              <div className="screener-table-controls">
+                <div className="screener-results-meta">
+                  Showing {filteredRows.length === 0 ? 0 : pageStart + 1}–
+                  {Math.min(pageStart + pageSize, filteredRows.length)} of {filteredRows.length}
+                </div>
+                <div className="screener-page-size">
+                  <label htmlFor="pageSize">Results per page</label>
+                  <select
+                    id="pageSize"
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value))
+                      setPage(1)
+                    }}
+                  >
+                    {[10, 25, 50, 100].map((size) => (
+                      <option key={size} value={size}>
+                        {size}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="screener-pagination">
+                  <button
+                    type="button"
+                    onClick={() => setPage(1)}
+                    disabled={page === 1}
+                  >
+                    First
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page === 1}
+                  >
+                    Prev
+                  </button>
+                  <span className="screener-page-indicator">
+                    Page {page} of {totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={page === totalPages}
+                  >
+                    Next
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPage(totalPages)}
+                    disabled={page === totalPages}
+                  >
+                    Last
+                  </button>
+                </div>
+              </div>
               <table className="markets-table">
                 <thead>
                   <tr>
@@ -691,7 +802,7 @@ function ScreenerPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {screener.data.slice(0, 50).map((row, idx) => (
+                  {pageRows.map((row, idx) => (
                     <tr key={row.market_ticker ?? idx}>
                       <td>{row.market_ticker}</td>
                       <td>{row.title}</td>
@@ -743,7 +854,7 @@ function ScreenerPage() {
             </div>
           )}
           {Array.isArray(screener.data) &&
-            screener.data.length === 0 &&
+            filteredRows.length === 0 &&
             !screener.loading &&
             !screener.error && (
               <span className="muted">No screener results available.</span>

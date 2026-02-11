@@ -403,6 +403,62 @@ h1 {
   cursor: pointer;
 }
 
+
+.screener-table-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.screener-results-meta {
+  color: #8a8fae;
+  font-size: 0.85rem;
+}
+
+.screener-page-size {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: #e8e9ee;
+}
+
+.screener-page-size select {
+  background: #141826;
+  border: 1px solid #23284a;
+  border-radius: 6px;
+  padding: 0.25rem 0.5rem;
+  color: #e8e9ee;
+}
+
+.screener-pagination {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.screener-pagination button {
+  border-radius: 10px;
+  border: 1px solid #2f3b6b;
+  background: #1a1f33;
+  color: #e8e9ee;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.screener-pagination button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.screener-page-indicator {
+  font-size: 0.85rem;
+  color: #b8bbcc;
+}
 .screener-filter-actions button:hover {
   background: #222840;
 }
