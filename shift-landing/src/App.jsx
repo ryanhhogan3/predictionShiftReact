@@ -497,13 +497,172 @@ function Dashboard() {
 }
 
 function ScreenerPage() {
-  const screener = useApi('/markets/screener')
+  const [form, setForm] = useState({
+    minVolume: '',
+    minOpenInterest: '',
+    maxSpread: '',
+    minTradability: '',
+    minChurn: '',
+    sortBy: 'tradability_score',
+    sortDir: 'desc',
+  })
+  const [queryParams, setQueryParams] = useState({})
+  const [refreshNonce, setRefreshNonce] = useState(0)
+
+  const screener = useApi('/markets/screener', {
+    ...queryParams,
+    _refresh: refreshNonce,
+  })
+
+  const handleChange = (event) => {
+    const { name, value } = event.target
+    setForm((prev) => ({ ...prev, [name]: value }))
+  }
+
+  const applyFilters = () => {
+    const next = {}
+
+    if (form.minVolume) next.min_volume = Number(form.minVolume)
+    if (form.minOpenInterest)
+      next.min_open_interest = Number(form.minOpenInterest)
+    if (form.maxSpread) next.max_spread_ticks = Number(form.maxSpread)
+    if (form.minTradability)
+      next.min_tradability_score = Number(form.minTradability)
+    if (form.minChurn) next.min_churn_rate = Number(form.minChurn)
+    if (form.sortBy) next.sort_by = form.sortBy
+    if (form.sortDir) next.sort_dir = form.sortDir
+
+    setQueryParams(next)
+    setRefreshNonce((n) => n + 1)
+  }
+
+  const resetFilters = () => {
+    setForm({
+      minVolume: '',
+      minOpenInterest: '',
+      maxSpread: '',
+      minTradability: '',
+      minChurn: '',
+      sortBy: 'tradability_score',
+      sortDir: 'desc',
+    })
+    setQueryParams({})
+    setRefreshNonce((n) => n + 1)
+  }
+
+  const refreshOnly = () => {
+    setRefreshNonce((n) => n + 1)
+  }
 
   return (
     <div className="dashboard">
       <h2>Market Screener</h2>
 
-      <div className="panel" style={{ marginTop: '1.5rem', marginBottom: '1.5rem' }}>
+      <div className="screener-filters">
+        <div className="screener-filter-group">
+          <label htmlFor="minVolume">Min Volume</label>
+          <input
+            id="minVolume"
+            name="minVolume"
+            type="number"
+            min="0"
+            value={form.minVolume}
+            onChange={handleChange}
+            placeholder="e.g. 1,000,000"
+          />
+        </div>
+        <div className="screener-filter-group">
+          <label htmlFor="minOpenInterest">Min Open Interest</label>
+          <input
+            id="minOpenInterest"
+            name="minOpenInterest"
+            type="number"
+            min="0"
+            value={form.minOpenInterest}
+            onChange={handleChange}
+            placeholder="e.g. 500,000"
+          />
+        </div>
+        <div className="screener-filter-group">
+          <label htmlFor="maxSpread">Max Spread (ticks)</label>
+          <input
+            id="maxSpread"
+            name="maxSpread"
+            type="number"
+            min="0"
+            step="0.1"
+            value={form.maxSpread}
+            onChange={handleChange}
+            placeholder="e.g. 2"
+          />
+        </div>
+        <div className="screener-filter-group">
+          <label htmlFor="minTradability">Min Tradability Score</label>
+          <input
+            id="minTradability"
+            name="minTradability"
+            type="number"
+            min="0"
+            step="0.1"
+            value={form.minTradability}
+            onChange={handleChange}
+            placeholder="e.g. 20"
+          />
+        </div>
+        <div className="screener-filter-group">
+          <label htmlFor="minChurn">Min Churn Rate</label>
+          <input
+            id="minChurn"
+            name="minChurn"
+            type="number"
+            min="0"
+            step="0.1"
+            value={form.minChurn}
+            onChange={handleChange}
+            placeholder="e.g. 1.5"
+          />
+        </div>
+        <div className="screener-filter-group">
+          <label htmlFor="sortBy">Order by</label>
+          <select
+            id="sortBy"
+            name="sortBy"
+            value={form.sortBy}
+            onChange={handleChange}
+          >
+            <option value="tradability_score">Tradability score</option>
+            <option value="volume">Volume</option>
+            <option value="open_interest">Open interest</option>
+            <option value="churn_rate">Churn rate</option>
+            <option value="spread_ticks">Spread (tightest)</option>
+          </select>
+        </div>
+        <div className="screener-filter-group">
+          <label htmlFor="sortDir">Direction</label>
+          <select
+            id="sortDir"
+            name="sortDir"
+            value={form.sortDir}
+            onChange={handleChange}
+          >
+            <option value="desc">Desc</option>
+            <option value="asc">Asc</option>
+          </select>
+        </div>
+        <div className="screener-filter-actions">
+          <button type="button" onClick={applyFilters}>
+            Apply filters
+          </button>
+          <button type="button" onClick={refreshOnly}>
+            Refresh
+          </button>
+          <button type="button" onClick={resetFilters}>
+            Reset
+          </button>
+        </div>
+      </div>
+
+      <div className="panel" style={{ marginTop: '0.5rem', marginBottom: '1.5rem' }}>
         <div className="panel-header">
           <div className="panel-title">High-Activity Markets</div>
         </div>
