@@ -496,6 +496,104 @@ function Dashboard() {
   )
 }
 
+function ScreenerPage() {
+  const screener = useApi('/markets/screener')
+
+  return (
+    <div className="dashboard">
+      <h2>Market Screener</h2>
+
+      <div className="panel" style={{ marginTop: '1.5rem', marginBottom: '1.5rem' }}>
+        <div className="panel-header">
+          <div className="panel-title">High-Activity Markets</div>
+        </div>
+        <div className="panel-body">
+          {screener.loading && (
+            <div className="loading">Loading screener…</div>
+          )}
+          {screener.error && (
+            <div className="error">{screener.error.message}</div>
+          )}
+          {Array.isArray(screener.data) && screener.data.length > 0 && (
+            <div className="markets-table-scroll">
+              <table className="markets-table">
+                <thead>
+                  <tr>
+                    <th>Market Ticker</th>
+                    <th>Title</th>
+                    <th>Volume</th>
+                    <th>Open Interest</th>
+                    <th>Yes Bid</th>
+                    <th>Yes Ask</th>
+                    <th>Spread (ticks)</th>
+                    <th>Tradability</th>
+                    <th>Churn Rate</th>
+                    <th>Updated</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {screener.data.slice(0, 50).map((row, idx) => (
+                    <tr key={row.market_ticker ?? idx}>
+                      <td>{row.market_ticker}</td>
+                      <td>{row.title}</td>
+                      <td>
+                        {typeof row.volume === 'number'
+                          ? row.volume.toLocaleString('en-US')
+                          : row.volume}
+                      </td>
+                      <td>
+                        {typeof row.open_interest === 'number'
+                          ? row.open_interest.toLocaleString('en-US')
+                          : row.open_interest}
+                      </td>
+                      <td>
+                        {typeof row.yes_bid === 'number'
+                          ? row.yes_bid.toFixed(0)
+                          : row.yes_bid}
+                      </td>
+                      <td>
+                        {typeof row.yes_ask === 'number'
+                          ? row.yes_ask.toFixed(0)
+                          : row.yes_ask}
+                      </td>
+                      <td>
+                        {typeof row.spread_ticks === 'number'
+                          ? row.spread_ticks.toFixed(1)
+                          : row.spread_ticks}
+                      </td>
+                      <td>
+                        {typeof row.tradability_score === 'number'
+                          ? row.tradability_score.toFixed(2)
+                          : row.tradability_score}
+                      </td>
+                      <td>
+                        {typeof row.churn_rate === 'number'
+                          ? row.churn_rate.toFixed(2)
+                          : row.churn_rate}
+                      </td>
+                      <td>
+                        {row.updated_at
+                          ? new Date(row.updated_at).toLocaleString()
+                          : ''}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {Array.isArray(screener.data) &&
+            screener.data.length === 0 &&
+            !screener.loading &&
+            !screener.error && (
+              <span className="muted">No screener results available.</span>
+            )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function App() {
   return (
     <div className="app-shell">
@@ -505,8 +603,11 @@ function App() {
           <Link to="/" className="app-link" style={{ marginRight: '1rem' }}>
             Landing
           </Link>
-          <Link to="/dashboard" className="app-link">
+          <Link to="/dashboard" className="app-link" style={{ marginRight: '1rem' }}>
             Dashboard
+          </Link>
+          <Link to="/screener" className="app-link">
+            Screener
           </Link>
         </nav>
       </header>
@@ -514,6 +615,7 @@ function App() {
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/screener" element={<ScreenerPage />} />
         </Routes>
       </main>
     </div>
