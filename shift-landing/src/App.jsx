@@ -500,7 +500,7 @@ function ScreenerPage() {
   const [form, setForm] = useState({
     minVolume: '',
     minOpenInterest: '',
-    maxSpread: '',
+    minSpread: '',
     minTradability: '',
     minChurn: '',
     sortBy: 'tradability_score',
@@ -525,7 +525,7 @@ function ScreenerPage() {
     if (form.minVolume) next.min_volume = Number(form.minVolume)
     if (form.minOpenInterest)
       next.min_open_interest = Number(form.minOpenInterest)
-    if (form.maxSpread) next.max_spread_ticks = Number(form.maxSpread)
+    if (form.minSpread) next.min_spread_ticks = Number(form.minSpread)
     if (form.minTradability)
       next.min_tradability_score = Number(form.minTradability)
     if (form.minChurn) next.min_churn_rate = Number(form.minChurn)
@@ -540,7 +540,7 @@ function ScreenerPage() {
     setForm({
       minVolume: '',
       minOpenInterest: '',
-      maxSpread: '',
+      minSpread: '',
       minTradability: '',
       minChurn: '',
       sortBy: 'tradability_score',
@@ -584,16 +584,16 @@ function ScreenerPage() {
           />
         </div>
         <div className="screener-filter-group">
-          <label htmlFor="maxSpread">Max Spread (ticks)</label>
+          <label htmlFor="minSpread">Min Spread (ticks)</label>
           <input
-            id="maxSpread"
-            name="maxSpread"
+            id="minSpread"
+            name="minSpread"
             type="number"
             min="0"
             step="0.1"
-            value={form.maxSpread}
+            value={form.minSpread}
             onChange={handleChange}
-            placeholder="e.g. 2"
+            placeholder="e.g. 0.5"
           />
         </div>
         <div className="screener-filter-group">
@@ -684,10 +684,10 @@ function ScreenerPage() {
                     <th>Open Interest</th>
                     <th>Yes Bid</th>
                     <th>Yes Ask</th>
+                    <th>Mid</th>
                     <th>Spread (ticks)</th>
                     <th>Tradability</th>
                     <th>Churn Rate</th>
-                    <th>Updated</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -716,6 +716,12 @@ function ScreenerPage() {
                           : row.yes_ask}
                       </td>
                       <td>
+                        {typeof row.yes_bid === 'number' &&
+                        typeof row.yes_ask === 'number'
+                          ? ((row.yes_bid + row.yes_ask) / 2).toFixed(1)
+                          : ''}
+                      </td>
+                      <td>
                         {typeof row.spread_ticks === 'number'
                           ? row.spread_ticks.toFixed(1)
                           : row.spread_ticks}
@@ -729,11 +735,6 @@ function ScreenerPage() {
                         {typeof row.churn_rate === 'number'
                           ? row.churn_rate.toFixed(2)
                           : row.churn_rate}
-                      </td>
-                      <td>
-                        {row.updated_at
-                          ? new Date(row.updated_at).toLocaleString()
-                          : ''}
                       </td>
                     </tr>
                   ))}
