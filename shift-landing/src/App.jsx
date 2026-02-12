@@ -46,6 +46,9 @@ function useApi(endpoint, params) {
 function LandingPage() {
   return (
     <main className="page">
+      <p className="seo-blurb">
+        Prediction market analytics, real-time Kalshi and Polymarket odds, event probability trend tracking, and news-versus-market divergence insights for early signal discovery.
+      </p>
       <section className="hero">
         <div className="hero-content">
           <h1>Markets reveal truth before headlines.</h1>
@@ -137,6 +140,9 @@ function Dashboard() {
 
   return (
     <div className="dashboard">
+      <p className="seo-blurb">
+        Market Shift Index 6-hour deltas, real-time market movers, top events by traded volume, spread blowouts, expiring contracts, and global order-flow metrics across prediction markets.
+      </p>
       <h2>Prediction Market Dashboard</h2>
 
       <div className="panel" style={{ marginTop: '1.5rem' }}>
@@ -611,6 +617,9 @@ function ScreenerPage() {
 
   return (
     <div className="dashboard">
+      <p className="seo-blurb">
+        Interactive prediction market screener filtering by volume, open interest, spread tightness, tradability score, churn rate, and price levels for Kalshi and Polymarket contracts.
+      </p>
       <h2>Market Screener</h2>
 
       <div className="screener-filters">
