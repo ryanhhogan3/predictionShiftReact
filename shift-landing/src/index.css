@@ -18,6 +18,14 @@ body {
   min-width: 320px;
 }
 
+.seo-blurb {
+  margin: 1rem auto 1.25rem;
+  max-width: 960px;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: #9ba0bb;
+}
+
 /* ---------- Page Centering ---------- */
 .page {
   min-height: 100vh;
