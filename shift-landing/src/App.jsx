@@ -46,9 +46,6 @@ function useApi(endpoint, params) {
 function LandingPage() {
   return (
     <main className="page">
-      <p className="seo-blurb">
-        Prediction market analytics, real-time Kalshi and Polymarket odds, event probability trend tracking, and news-versus-market divergence insights for early signal discovery.
-      </p>
       <section className="hero">
         <div className="hero-content">
           <h1>Markets reveal truth before headlines.</h1>
