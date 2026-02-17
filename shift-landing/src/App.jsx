@@ -6,7 +6,7 @@ import './App.css'
 // Prefer Vite env var, fall back to the existing Lambda URL for safety.
 const API_BASE =
   import.meta.env.VITE_API_BASE ||
-  'https://wnlul5avuii4hh4crehsmljhzq0ikxwx.lambda-url.us-east-1.on.aws'
+  'http://44.202.160.149:8000'
 
 function useApi(endpoint, params) {
   const [data, setData] = useState(null)
