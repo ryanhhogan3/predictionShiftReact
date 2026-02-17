@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react'
 import { Routes, Route, Link } from 'react-router-dom'
 import './App.css'
 
-// Call the Lambda API directly from the browser
+// Call the API directly from the browser.
+// Prefer Vite env var, fall back to the existing Lambda URL for safety.
 const API_BASE =
+  import.meta.env.VITE_API_BASE ||
   'https://wnlul5avuii4hh4crehsmljhzq0ikxwx.lambda-url.us-east-1.on.aws'
 
 function useApi(endpoint, params) {
@@ -94,10 +96,10 @@ function LandingPage() {
 }
 
 function Dashboard() {
-  const eventsByVolume = useApi('/top_events_volume')
-  const spreadBlowouts = useApi('/markets/spread_blowouts')
-  const expiringSoon = useApi('/markets/expiring_soon')
-  const marketMovers = useApi('/market_movers')
+  const eventsByVolume = useApi('/top-events-volume')
+  const spreadBlowouts = useApi('/markets/spread-blowouts')
+  const expiringSoon = useApi('/markets/expiring-soon')
+  const marketMovers = useApi('/market-movers')
   const globalDeltas = useApi('/global-6h-deltas', { limit: 30 })
 
   let vixPoints = ''
