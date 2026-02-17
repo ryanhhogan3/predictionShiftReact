@@ -3,10 +3,18 @@ import { Routes, Route, Link } from 'react-router-dom'
 import './App.css'
 
 // Call the API directly from the browser.
-// Prefer Vite env var, fall back to the existing Lambda URL for safety.
+// Prefer Vite env var, fall back to the public domain (not the :8000 port).
 const API_BASE =
   import.meta.env.VITE_API_BASE ||
-  'http://44.202.160.149:8000'
+  'https://api.predictionshift.com'
+
+export async function getHealth() {
+  const response = await fetch(`${API_BASE}/health`)
+  if (!response.ok) {
+    throw new Error(await response.text())
+  }
+  return response.json()
+}
 
 function useApi(endpoint, params) {
   const [data, setData] = useState(null)
