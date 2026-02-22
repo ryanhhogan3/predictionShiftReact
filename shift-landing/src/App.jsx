@@ -108,10 +108,12 @@ const TOP_CHANGES_METRICS = {
   ],
 }
 
+const TOP_CHANGES_MAX_ROWS = 10
+
 function Last24hChangesPanel({ defaultProvider = 'kalshi' }) {
   const [provider, setProvider] = useState(defaultProvider)
   const [metric, setMetric] = useState('volume')
-  const [limit, setLimit] = useState(50)
+  const [limit, setLimit] = useState(TOP_CHANGES_MAX_ROWS)
   const [minPrevValue, setMinPrevValue] = useState(0)
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
@@ -252,11 +254,15 @@ function Last24hChangesPanel({ defaultProvider = 'kalshi' }) {
             <input
               type="number"
               min="1"
-              max="250"
+              max={TOP_CHANGES_MAX_ROWS}
               value={limit}
               onChange={(e) => {
                 const val = Number(e.target.value)
-                setLimit(Number.isFinite(val) && val > 0 ? val : 50)
+                if (!Number.isFinite(val) || val <= 0) {
+                  setLimit(TOP_CHANGES_MAX_ROWS)
+                  return
+                }
+                setLimit(Math.min(TOP_CHANGES_MAX_ROWS, Math.floor(val)))
               }}
             />
           </div>
@@ -331,7 +337,7 @@ function Last24hChangesPanel({ defaultProvider = 'kalshi' }) {
                 </tr>
               </thead>
               <tbody>
-                {sortedRows.map((row, idx) => {
+                {sortedRows.slice(0, TOP_CHANGES_MAX_ROWS).map((row, idx) => {
                   const delta = row.delta_value
                   const deltaClass = typeof delta === 'number'
                     ? delta > 0
