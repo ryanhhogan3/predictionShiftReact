@@ -1746,22 +1746,31 @@ function VolIndexPage() {
 function App() {
   return (
     <div className="app-shell">
+      <svg style={{ width: 0, height: 0, position: 'absolute' }} aria-hidden="true" focusable="false">
+        <defs>
+          <linearGradient id="chart-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#6366f1" />
+            <stop offset="50%" stopColor="#a855f7" />
+            <stop offset="100%" stopColor="#ec4899" />
+          </linearGradient>
+        </defs>
+      </svg>
       <header className="app-nav">
         <span className="app-logo">Markets Before Headlines</span>
-        <nav>
-          <Link to="/" className="app-link" style={{ marginRight: '1rem' }}>
+        <nav style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
+          <Link to="/" className="app-link">
             Landing
           </Link>
-          <Link to="/dashboard" className="app-link" style={{ marginRight: '1rem' }}>
+          <Link to="/dashboard" className="app-link">
             Dashboard
           </Link>
-          <Link to="/screener" className="app-link" style={{ marginRight: '1rem' }}>
+          <Link to="/screener" className="app-link">
             Screener
           </Link>
-          <Link to="/poly-dashboard" className="app-link" style={{ marginRight: '1rem' }}>
+          <Link to="/poly-dashboard" className="app-link">
             Poly Dashboard
           </Link>
-          <Link to="/poly-screener" className="app-link" style={{ marginRight: '1rem' }}>
+          <Link to="/poly-screener" className="app-link">
             Poly Screener
           </Link>
           <Link to="/vol-index" className="app-link">
