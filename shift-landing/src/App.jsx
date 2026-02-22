@@ -8,10 +8,12 @@ const API_BASE =
   import.meta.env.VITE_API_BASE ||
   'https://api.predictionshift.com'
 
-// Polymarket API — served at /poly subpath (nginx) or port 8001 directly
+// Polymarket API — in dev the Vite proxy intercepts /poly/* and strips the
+// prefix before forwarding to http://localhost:8001.  In production nginx
+// does the same; set VITE_POLY_API_BASE to override for direct port access.
 const POLY_API_BASE =
   import.meta.env.VITE_POLY_API_BASE ||
-  'https://api.predictionshift.com/poly'
+  (import.meta.env.DEV ? '/poly' : 'https://api.predictionshift.com/poly')
 
 export async function getHealth() {
   const response = await fetch(`${API_BASE}/health`)
@@ -1482,6 +1484,265 @@ function PolyScreenerPage() {
   )
 }
 
+// ─── Vol Index Page ───────────────────────────────────────────────────────────
+
+function buildNormPoints(values, w = 100, h = 40, pad = 4) {
+  if (!values || values.length < 2) return ''
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  const span = max - min || 1
+  return values
+    .map((v, i) => {
+      const x = (i / (values.length - 1)) * w
+      const norm = (v - min) / span
+      const y = h - pad - norm * (h - pad * 2)
+      return `${x},${y}`
+    })
+    .join(' ')
+}
+
+function DualLineChart({ series, loading, error }) {
+  const COLORS = ['#7c6af7', '#38bdf8']
+  if (loading) return <div className="loading">Loading chart…</div>
+  if (error) return <div className="error">{error.message}</div>
+  if (!series || series.every((s) => !s.values || s.values.length < 2)) {
+    return <span className="muted">No chart data yet.</span>
+  }
+  return (
+    <div className="dual-chart-wrapper">
+      <svg
+        className="dual-chart"
+        viewBox="0 0 100 40"
+        preserveAspectRatio="none"
+        style={{ width: '100%', height: '6rem', display: 'block' }}
+      >
+        {series.map((s, si) => {
+          const pts = buildNormPoints(s.values)
+          return pts ? (
+            <polyline
+              key={si}
+              points={pts}
+              fill="none"
+              stroke={s.color ?? COLORS[si % COLORS.length]}
+              strokeWidth="1.4"
+              vectorEffect="non-scaling-stroke"
+            />
+          ) : null
+        })}
+      </svg>
+      <div className="dual-chart-legend">
+        {series.map((s, si) => (
+          <span key={si} className="legend-item">
+            <span
+              className="legend-dot"
+              style={{ background: s.color ?? COLORS[si % COLORS.length] }}
+            />
+            {s.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function VolIndexPage() {
+  const kalshiDeltas = useApi('/global-6h-deltas', { limit: 50 })
+  const polyVolIndex = usePolyApi('/vol/index/global', { points: 50 })
+  const polyDeltas   = usePolyApi('/global-deltas', { limit: 50 })
+
+  // ── Kalshi index (volume + OI + breadth normalized composite) ──
+  let kalshiIndexPoints = ''
+  let kalshiLatest = null
+  if (Array.isArray(kalshiDeltas.data) && kalshiDeltas.data.length > 0) {
+    const rows = [...kalshiDeltas.data].reverse()
+    const baseVol  = rows[0].d_volume_6h || 1
+    const baseOi   = rows[0].d_oi_6h || 1
+    const baseWide = rows[0].d_wide_6h || 1
+    const values = rows.map((r) => {
+      const relVol  = r.d_volume_6h / baseVol
+      const relOi   = r.d_oi_6h / baseOi
+      const relWide = r.d_wide_6h / baseWide
+      return (100 * (relVol + relOi + relWide)) / 3
+    })
+    kalshiIndexPoints = buildNormPoints(values)
+    kalshiLatest = values[values.length - 1]?.toFixed(1)
+  }
+
+  // ── Kalshi Δ volume / Δ OI chart ──
+  const kalshiChartSeries = Array.isArray(kalshiDeltas.data) && kalshiDeltas.data.length > 1
+    ? (() => {
+        const rows = [...kalshiDeltas.data].reverse()
+        return [
+          { label: 'Δ Volume (6h)', values: rows.map((r) => r.d_volume_6h ?? 0), color: '#7c6af7' },
+          { label: 'Δ Open Interest (6h)', values: rows.map((r) => r.d_oi_6h ?? 0), color: '#38bdf8' },
+        ]
+      })()
+    : null
+
+  // ── Poly vol index (log-odds, annualized) ──
+  let polyIndexPoints = ''
+  let polyLatest = null
+  if (Array.isArray(polyVolIndex.data) && polyVolIndex.data.length > 0) {
+    const values = polyVolIndex.data.map((r) => r.vol_index ?? 0)
+    polyIndexPoints = buildNormPoints(values)
+    polyLatest = values[values.length - 1]?.toFixed(4)
+  }
+
+  // ── Poly Δ volume / Δ liquidity chart ──
+  const polyChartSeries = Array.isArray(polyDeltas.data) && polyDeltas.data.length > 1
+    ? (() => {
+        const rows = [...polyDeltas.data].reverse()
+        return [
+          { label: 'Δ Volume (USDC)', values: rows.map((r) => r.d_volume ?? 0), color: '#7c6af7' },
+          { label: 'Δ Liquidity (USDC)', values: rows.map((r) => r.d_liquidity ?? 0), color: '#38bdf8' },
+        ]
+      })()
+    : null
+
+  return (
+    <div className="dashboard">
+      <p className="seo-blurb">
+        Side-by-side realized volatility indexes for Kalshi and Polymarket —
+        Kalshi Market Shift Index from 6-hour volume, open-interest, and breadth
+        deltas; Polymarket log-odds vol index liquidity-weighted across all
+        tracked contracts.
+      </p>
+      <h2>Vol Index</h2>
+
+      <div
+        className="vol-index-grid"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+          gap: '1rem',
+          marginTop: '1.5rem',
+        }}
+      >
+        {/* ── Kalshi ── */}
+        <div className="panel">
+          <div className="panel-header">
+            <div className="panel-title">Kalshi — Market Shift Index</div>
+          </div>
+          <div className="panel-body">
+            {kalshiDeltas.loading && <div className="loading">Loading…</div>}
+            {kalshiDeltas.error && (
+              <div className="error">{kalshiDeltas.error.message}</div>
+            )}
+            {kalshiIndexPoints && (
+              <>
+                <div className="vix-chart-wrapper">
+                  <svg
+                    className="vix-chart"
+                    viewBox="0 0 100 40"
+                    preserveAspectRatio="none"
+                  >
+                    <polyline className="vix-chart-path" points={kalshiIndexPoints} />
+                  </svg>
+                </div>
+                <div className="vix-chart-label">
+                  Latest: <strong>{kalshiLatest}</strong>
+                </div>
+              </>
+            )}
+            {!kalshiIndexPoints && !kalshiDeltas.loading && !kalshiDeltas.error && (
+              <span className="muted">No Kalshi index data available.</span>
+            )}
+
+            <div style={{ marginTop: '1.25rem' }}>
+              <div
+                className="panel-section-label"
+                style={{ fontSize: '0.75rem', opacity: 0.6, marginBottom: '0.4rem' }}
+              >
+                Δ VOLUME &amp; Δ OPEN INTEREST (6h windows)
+              </div>
+              <DualLineChart
+                series={kalshiChartSeries}
+                loading={kalshiDeltas.loading}
+                error={kalshiDeltas.error}
+              />
+            </div>
+
+            <p className="panel-methodology" style={{ marginTop: '1rem' }}>
+              <strong>Methodology:</strong> The Kalshi Market Shift Index
+              combines three normalized 6-hour deltas: trading volume
+              (Δ&nbsp;volume), open interest (Δ&nbsp;OI), and market breadth
+              (Δ&nbsp;wide — count of markets with meaningful two-sided
+              liquidity). Each series is normalized relative to the earliest
+              observation in the window, then the three relative values are
+              averaged and scaled to 100. Higher values indicate periods of
+              elevated crowd repricing and order flow. The index is directional
+              only and does not represent a tradable asset or financial advice.
+            </p>
+          </div>
+        </div>
+
+        {/* ── Polymarket ── */}
+        <div className="panel">
+          <div className="panel-header">
+            <div className="panel-title">Polymarket — Realized Log-Odds Vol Index</div>
+          </div>
+          <div className="panel-body">
+            {polyVolIndex.loading && <div className="loading">Loading…</div>}
+            {polyVolIndex.error && (
+              <div className="error">{polyVolIndex.error.message}</div>
+            )}
+            {polyIndexPoints && (
+              <>
+                <div className="vix-chart-wrapper">
+                  <svg
+                    className="vix-chart"
+                    viewBox="0 0 100 40"
+                    preserveAspectRatio="none"
+                  >
+                    <polyline className="vix-chart-path" points={polyIndexPoints} />
+                  </svg>
+                </div>
+                <div className="vix-chart-label">
+                  Latest: <strong>{polyLatest}</strong>
+                </div>
+              </>
+            )}
+            {!polyIndexPoints && !polyVolIndex.loading && !polyVolIndex.error && (
+              <span className="muted">
+                No data yet — enable ENABLE_MARKET_SNAPSHOT=1 on the
+                Polymarket exporter.
+              </span>
+            )}
+
+            <div style={{ marginTop: '1.25rem' }}>
+              <div
+                className="panel-section-label"
+                style={{ fontSize: '0.75rem', opacity: 0.6, marginBottom: '0.4rem' }}
+              >
+                Δ VOLUME &amp; Δ LIQUIDITY (run-over-run, USDC)
+              </div>
+              <DualLineChart
+                series={polyChartSeries}
+                loading={polyDeltas.loading}
+                error={polyDeltas.error}
+              />
+            </div>
+
+            <p className="panel-methodology" style={{ marginTop: '1rem' }}>
+              <strong>Methodology:</strong> The Polymarket Vol Index is a
+              liquidity-weighted annualized realized volatility measure built
+              from log-odds price changes. For each contract the log-odds
+              return is ln(p&nbsp;/&nbsp;(1−p)) where p is the YES price
+              (0–1&nbsp;USDC). Returns are squared, averaged over the sampling
+              window, and annualized by scaling to a full year of windows.
+              Each contract's result is weighted by its USDC liquidity before
+              aggregation, so liquid markets drive the index more than thin
+              ones. Higher values indicate rapid collective repricing across
+              Polymarket contracts. Requires ENABLE_MARKET_SNAPSHOT=1 on the
+              exporter to accumulate price history.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function App() {
   return (
     <div className="app-shell">
@@ -1500,8 +1761,11 @@ function App() {
           <Link to="/poly-dashboard" className="app-link" style={{ marginRight: '1rem' }}>
             Poly Dashboard
           </Link>
-          <Link to="/poly-screener" className="app-link">
+          <Link to="/poly-screener" className="app-link" style={{ marginRight: '1rem' }}>
             Poly Screener
+          </Link>
+          <Link to="/vol-index" className="app-link">
+            Vol Index
           </Link>
         </nav>
       </header>
@@ -1512,6 +1776,7 @@ function App() {
           <Route path="/screener" element={<ScreenerPage />} />
           <Route path="/poly-dashboard" element={<PolyDashboard />} />
           <Route path="/poly-screener" element={<PolyScreenerPage />} />
+          <Route path="/vol-index" element={<VolIndexPage />} />
         </Routes>
       </main>
     </div>
