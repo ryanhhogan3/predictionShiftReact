@@ -93,6 +93,274 @@ function usePolyApi(endpoint, params) {
   return { data, loading, error }
 }
 
+const TOP_CHANGES_METRICS = {
+  kalshi: [
+    { value: 'volume', label: 'Volume' },
+    { value: 'open_interest', label: 'Open Interest' },
+    { value: 'mid', label: 'Mid' },
+    { value: 'spread_ticks', label: 'Spread (ticks)' },
+  ],
+  poly: [
+    { value: 'volume', label: 'Volume' },
+    { value: 'volume_24hr', label: 'Volume (24h)' },
+    { value: 'liquidity', label: 'Liquidity' },
+    { value: 'outcome_yes_price', label: 'YES Price' },
+  ],
+}
+
+function Last24hChangesPanel({ defaultProvider = 'kalshi' }) {
+  const [provider, setProvider] = useState(defaultProvider)
+  const [metric, setMetric] = useState('volume')
+  const [limit, setLimit] = useState(50)
+  const [minPrevValue, setMinPrevValue] = useState(0)
+  const [rows, setRows] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [retryNonce, setRetryNonce] = useState(0)
+  const [sortBy, setSortBy] = useState('delta_value')
+  const [sortDir, setSortDir] = useState('desc')
+
+  const metricOptions = TOP_CHANGES_METRICS[provider] ?? []
+
+  useEffect(() => {
+    if (!metricOptions.some((opt) => opt.value === metric)) {
+      setMetric(metricOptions[0]?.value ?? 'volume')
+    }
+  }, [provider])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    const base = provider === 'kalshi' ? API_BASE : POLY_API_BASE
+    const query = new URLSearchParams({
+      metric,
+      limit: String(limit),
+      min_prev_value: String(minPrevValue),
+    }).toString()
+
+    setLoading(true)
+    setError(null)
+
+    fetch(`${base}/markets/top-changes-24h?${query}`, {
+      signal: controller.signal,
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const err = new Error(`HTTP ${res.status}`)
+          err.status = res.status
+          err.body = await res.text()
+          throw err
+        }
+        return res.json()
+      })
+      .then((json) => setRows(Array.isArray(json) ? json : []))
+      .catch((err) => {
+        if (err.name !== 'AbortError') {
+          setError(err)
+        }
+      })
+      .finally(() => setLoading(false))
+
+    return () => controller.abort()
+  }, [provider, metric, limit, minPrevValue, retryNonce])
+
+  const formatValue = (value) => {
+    if (typeof value !== 'number') return value ?? '—'
+    if (Math.abs(value) >= 1000) return value.toLocaleString('en-US')
+    return value.toFixed(3).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1')
+  }
+
+  const formatPct = (value) => {
+    if (typeof value !== 'number') return '—'
+    return `${value.toFixed(2)}%`
+  }
+
+  const getIdentifier = (row) => {
+    if (provider === 'kalshi') return row.market_ticker ?? '—'
+    return row.condition_id ?? '—'
+  }
+
+  const getTitle = (row) => {
+    if (provider === 'kalshi') return row.title ?? '—'
+    return row.question ?? '—'
+  }
+
+  const getComparableValue = (row, key) => {
+    if (key === 'identifier') return String(getIdentifier(row)).toLowerCase()
+    if (key === 'title') return String(getTitle(row)).toLowerCase()
+    const value = row[key]
+    if (typeof value === 'number') return value
+    if (value === null || value === undefined) return Number.NEGATIVE_INFINITY
+    const asNum = Number(value)
+    if (!Number.isNaN(asNum)) return asNum
+    return String(value).toLowerCase()
+  }
+
+  const sortedRows = [...rows].sort((a, b) => {
+    const av = getComparableValue(a, sortBy)
+    const bv = getComparableValue(b, sortBy)
+    if (av < bv) return sortDir === 'asc' ? -1 : 1
+    if (av > bv) return sortDir === 'asc' ? 1 : -1
+    return 0
+  })
+
+  const handleSort = (column) => {
+    if (sortBy === column) {
+      setSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'))
+      return
+    }
+    setSortBy(column)
+    setSortDir(column === 'identifier' || column === 'title' ? 'asc' : 'desc')
+  }
+
+  const renderSortArrow = (column) => {
+    if (sortBy !== column) return '↕'
+    return sortDir === 'asc' ? '↑' : '↓'
+  }
+
+  return (
+    <div className="panel" style={{ marginTop: '1rem' }}>
+      <div className="panel-header">
+        <div className="panel-title">Last 24h Changes</div>
+      </div>
+      <div className="panel-body">
+        <div className="top-changes-controls">
+          <div className="top-changes-control">
+            <label>Provider</label>
+            <select
+              value={provider}
+              onChange={(e) => setProvider(e.target.value)}
+            >
+              <option value="kalshi">Kalshi</option>
+              <option value="poly">Polymarket</option>
+            </select>
+          </div>
+          <div className="top-changes-control">
+            <label>Metric</label>
+            <select
+              value={metric}
+              onChange={(e) => setMetric(e.target.value)}
+            >
+              {metricOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="top-changes-control">
+            <label>Limit</label>
+            <input
+              type="number"
+              min="1"
+              max="250"
+              value={limit}
+              onChange={(e) => {
+                const val = Number(e.target.value)
+                setLimit(Number.isFinite(val) && val > 0 ? val : 50)
+              }}
+            />
+          </div>
+          <div className="top-changes-control">
+            <label>Min Prev Value</label>
+            <input
+              type="number"
+              step="any"
+              value={minPrevValue}
+              onChange={(e) => {
+                const val = Number(e.target.value)
+                setMinPrevValue(Number.isFinite(val) ? val : 0)
+              }}
+            />
+          </div>
+        </div>
+
+        {loading && <div className="loading">Loading 24h changes…</div>}
+
+        {!loading && error?.status === 400 && (
+          <div className="error">Unsupported metric for selected provider.</div>
+        )}
+
+        {!loading && error?.status === 500 && (
+          <div className="top-changes-retry">
+            <div className="error">
+              Backend snapshot issue while loading last 24h changes.
+            </div>
+            <button
+              type="button"
+              onClick={() => setRetryNonce((n) => n + 1)}
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        {!loading && error && error.status !== 400 && error.status !== 500 && (
+          <div className="error">{error.message}</div>
+        )}
+
+        {!loading && !error && rows.length === 0 && (
+          <span className="muted">No markets matched this filter in last 24h.</span>
+        )}
+
+        {!loading && !error && rows.length > 0 && (
+          <div className="markets-table-scroll">
+            <table className="markets-table">
+              <thead>
+                <tr>
+                  <th onClick={() => handleSort('identifier')} className="sortable-header">
+                    Identifier {renderSortArrow('identifier')}
+                  </th>
+                  <th onClick={() => handleSort('title')} className="sortable-header">
+                    Title / Question {renderSortArrow('title')}
+                  </th>
+                  <th onClick={() => handleSort('current_value')} className="sortable-header">
+                    Current {renderSortArrow('current_value')}
+                  </th>
+                  <th onClick={() => handleSort('prev_value')} className="sortable-header">
+                    Previous {renderSortArrow('prev_value')}
+                  </th>
+                  <th onClick={() => handleSort('delta_value')} className="sortable-header">
+                    Delta {renderSortArrow('delta_value')}
+                  </th>
+                  <th onClick={() => handleSort('pct_change')} className="sortable-header">
+                    % Change {renderSortArrow('pct_change')}
+                  </th>
+                  <th onClick={() => handleSort('latest_snap_ts')} className="sortable-header">
+                    Snapshot Time {renderSortArrow('latest_snap_ts')}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedRows.map((row, idx) => {
+                  const delta = row.delta_value
+                  const deltaClass = typeof delta === 'number'
+                    ? delta > 0
+                      ? 'delta-positive'
+                      : delta < 0
+                        ? 'delta-negative'
+                        : ''
+                    : ''
+                  return (
+                    <tr key={`${getIdentifier(row)}-${idx}`}>
+                      <td>{getIdentifier(row)}</td>
+                      <td>{getTitle(row)}</td>
+                      <td>{formatValue(row.current_value)}</td>
+                      <td>{formatValue(row.prev_value)}</td>
+                      <td className={deltaClass}>{formatValue(row.delta_value)}</td>
+                      <td>{formatPct(row.pct_change)}</td>
+                      <td>{row.latest_snap_ts ?? '—'}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function LandingPage() {
   return (
     <main className="page">
@@ -191,6 +459,8 @@ function Dashboard() {
         Market Shift Index 6-hour deltas, real-time market movers, top events by traded volume, spread blowouts, expiring contracts, and global order-flow metrics across prediction markets.
       </p>
       <h2>Prediction Market Dashboard</h2>
+
+      <Last24hChangesPanel defaultProvider="kalshi" />
 
       <div className="panel" style={{ marginTop: '1.5rem' }}>
         <div className="panel-header">
@@ -963,6 +1233,8 @@ function PolyDashboard() {
         by volume and liquidity, expiring markets, and global USDC flow metrics.
       </p>
       <h2>Polymarket Dashboard</h2>
+
+      <Last24hChangesPanel defaultProvider="poly" />
 
       {/* ── Vol Index ── */}
       <div className="panel" style={{ marginTop: '1.5rem' }}>
@@ -1762,10 +2034,10 @@ function App() {
             Landing
           </Link>
           <Link to="/dashboard" className="app-link">
-            Dashboard
+            Kalshi Dashboard
           </Link>
           <Link to="/screener" className="app-link">
-            Screener
+            Kalshi Screener
           </Link>
           <Link to="/poly-dashboard" className="app-link">
             Poly Dashboard

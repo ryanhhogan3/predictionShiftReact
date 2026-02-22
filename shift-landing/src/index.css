@@ -830,6 +830,79 @@ h1 {
   font-weight: 500;
 }
 
+.top-changes-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 0.9rem;
+}
+
+.top-changes-control {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.top-changes-control label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.top-changes-control select,
+.top-changes-control input {
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 0.5rem 0.65rem;
+  color: #fff;
+  font-size: 0.85rem;
+}
+
+.top-changes-control select:focus,
+.top-changes-control input:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+}
+
+.sortable-header {
+  cursor: pointer;
+  user-select: none;
+}
+
+.delta-positive {
+  color: #22c55e;
+  font-weight: 600;
+}
+
+.delta-negative {
+  color: #ef4444;
+  font-weight: 600;
+}
+
+.top-changes-retry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.top-changes-retry button {
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+  padding: 0.45rem 0.8rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.top-changes-retry button:hover {
+  border-color: var(--border-hover);
+  background: rgba(255, 255, 255, 0.08);
+}
+
 /* ---------- Mobile adjustments ---------- */
 @media (max-width: 768px) {
   h1 {
