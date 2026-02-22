@@ -8,6 +8,11 @@ const API_BASE =
   import.meta.env.VITE_API_BASE ||
   'https://api.predictionshift.com'
 
+// Polymarket API — served at /poly subpath (nginx) or port 8001 directly
+const POLY_API_BASE =
+  import.meta.env.VITE_POLY_API_BASE ||
+  'https://api.predictionshift.com/poly'
+
 export async function getHealth() {
   const response = await fetch(`${API_BASE}/health`)
   if (!response.ok) {
@@ -44,6 +49,39 @@ function useApi(endpoint, params) {
         if (err.name !== 'AbortError') {
           setError(err)
         }
+      })
+      .finally(() => setLoading(false))
+
+    return () => controller.abort()
+  }, [endpoint, JSON.stringify(params)])
+
+  return { data, loading, error }
+}
+
+function usePolyApi(endpoint, params) {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    const query = params
+      ? `?${new URLSearchParams(params).toString()}`
+      : ''
+
+    setLoading(true)
+    setError(null)
+
+    fetch(`${POLY_API_BASE}${endpoint}${query}`, {
+      signal: controller.signal,
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        return res.json()
+      })
+      .then((json) => setData(json))
+      .catch((err) => {
+        if (err.name !== 'AbortError') setError(err)
       })
       .finally(() => setLoading(false))
 
@@ -881,6 +919,569 @@ function ScreenerPage() {
   )
 }
 
+// ─── Polymarket Dashboard ────────────────────────────────────────────────────
+
+function PolyDashboard() {
+  const globalSnapshot   = usePolyApi('/global-snapshot')
+  const globalDeltas     = usePolyApi('/global-deltas', { limit: 20 })
+  const topEventsVolume  = usePolyApi('/top-events-volume', { limit: 15 })
+  const topEventsLiq     = usePolyApi('/top-events-liquidity', { limit: 15 })
+  const expiringSoon     = usePolyApi('/markets/expiring-soon', { hours: 48, limit: 15 })
+  const midMoves         = usePolyApi('/markets/mid-moves', { hours: 24, limit: 15 })
+  const volIndex         = usePolyApi('/vol/index/global', { points: 50 })
+
+  // Build vol-index sparkline
+  let volIndexPoints = ''
+  let latestVolIndex = null
+  if (Array.isArray(volIndex.data) && volIndex.data.length > 0) {
+    const series = [...volIndex.data]
+    const values = series.map((s) => s.vol_index ?? 0)
+    const min = Math.min(...values)
+    const max = Math.max(...values)
+    const span = max - min || 1
+    volIndexPoints = series
+      .map((s, i) => {
+        const x = series.length === 1 ? 0 : (i / (series.length - 1)) * 100
+        const norm = ((s.vol_index ?? 0) - min) / span
+        const y = 35 - norm * 25
+        return `${x},${y}`
+      })
+      .join(' ')
+    latestVolIndex = values[values.length - 1]
+  }
+
+  const fmtPct = (v) => (typeof v === 'number' ? `${(v * 100).toFixed(1)}%` : v)
+  const fmtNum = (v) => (typeof v === 'number' ? v.toLocaleString('en-US') : v)
+  const fmtDec = (v, d = 2) => (typeof v === 'number' ? v.toFixed(d) : v)
+
+  return (
+    <div className="dashboard">
+      <p className="seo-blurb">
+        Polymarket real-time analytics: vol index, market mid-moves, top events
+        by volume and liquidity, expiring markets, and global USDC flow metrics.
+      </p>
+      <h2>Polymarket Dashboard</h2>
+
+      {/* ── Vol Index ── */}
+      <div className="panel" style={{ marginTop: '1.5rem' }}>
+        <div className="panel-header">
+          <div className="panel-title">Realized Vol Index (log-odds, annualized)</div>
+        </div>
+        <div className="panel-body">
+          {volIndex.loading && <div className="loading">Loading vol index…</div>}
+          {volIndex.error   && <div className="error">{volIndex.error.message}</div>}
+          {volIndexPoints && (
+            <div className="vix-chart-wrapper">
+              <svg className="vix-chart" viewBox="0 0 100 40" preserveAspectRatio="none">
+                <polyline className="vix-chart-path" points={volIndexPoints} />
+              </svg>
+            </div>
+          )}
+          {latestVolIndex !== null && (
+            <div className="vix-chart-label">
+              Current index: <strong>{fmtDec(latestVolIndex, 4)}</strong>
+            </div>
+          )}
+          {Array.isArray(volIndex.data) && volIndex.data.length === 0 &&
+            !volIndex.loading && !volIndex.error && (
+            <span className="muted">
+              No vol-index data yet — enable ENABLE_MARKET_SNAPSHOT=1 on the
+              exporter.
+            </span>
+          )}
+          <p className="panel-methodology">
+            Liquidity-weighted annualized realized volatility computed from
+            log-odds price changes across all tracked Polymarket contracts.
+            Higher values indicate elevated repricing activity.
+          </p>
+        </div>
+      </div>
+
+      {/* ── Global Snapshot ── */}
+      <div className="panel" style={{ marginTop: '1rem' }}>
+        <div className="panel-header">
+          <div className="panel-title">Global Snapshot</div>
+        </div>
+        <div className="panel-body">
+          {globalSnapshot.loading && <div className="loading">Loading snapshot…</div>}
+          {globalSnapshot.error   && <div className="error">{globalSnapshot.error.message}</div>}
+          {globalSnapshot.data && !globalSnapshot.loading && (
+            <div className="markets-table-scroll">
+              <table className="markets-table">
+                <thead>
+                  <tr>
+                    <th>Snapshot Time</th>
+                    <th>Total Volume (USDC)</th>
+                    <th>Total Liquidity (USDC)</th>
+                    <th>Active Markets</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>{globalSnapshot.data.snap_ts}</td>
+                    <td>{fmtNum(globalSnapshot.data.total_volume)}</td>
+                    <td>{fmtNum(globalSnapshot.data.total_liquidity)}</td>
+                    <td>{fmtNum(globalSnapshot.data.active_markets)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Global Deltas ── */}
+      <div className="panel" style={{ marginTop: '1rem' }}>
+        <div className="panel-header">
+          <div className="panel-title">Global Deltas (run-over-run)</div>
+        </div>
+        <div className="panel-body">
+          {globalDeltas.loading && <div className="loading">Loading deltas…</div>}
+          {globalDeltas.error   && <div className="error">{globalDeltas.error.message}</div>}
+          {Array.isArray(globalDeltas.data) && globalDeltas.data.length > 0 && (
+            <div className="markets-table-scroll">
+              <table className="markets-table">
+                <thead>
+                  <tr>
+                    <th>Snapshot</th>
+                    <th>Δ Volume (USDC)</th>
+                    <th>Δ Liquidity (USDC)</th>
+                    <th>Δ Markets</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {globalDeltas.data.slice(0, 15).map((row, idx) => (
+                    <tr key={row.snap_ts ?? idx}>
+                      <td>{row.snap_ts}</td>
+                      <td>{fmtNum(row.d_volume)}</td>
+                      <td>{fmtNum(row.d_liquidity)}</td>
+                      <td>{fmtNum(row.d_markets)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Market Mid-Moves ── */}
+      <div className="panel" style={{ marginTop: '1rem' }}>
+        <div className="panel-header">
+          <div className="panel-title">Market Mid-Moves (24h)</div>
+        </div>
+        <div className="panel-body">
+          {midMoves.loading && <div className="loading">Loading mid-moves…</div>}
+          {midMoves.error   && <div className="error">{midMoves.error.message}</div>}
+          {Array.isArray(midMoves.data) && midMoves.data.length > 0 && (
+            <div className="markets-table-scroll">
+              <table className="markets-table">
+                <thead>
+                  <tr>
+                    <th>Question</th>
+                    <th>Old Price</th>
+                    <th>New Price</th>
+                    <th>Δ Price</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {midMoves.data.slice(0, 15).map((row, idx) => (
+                    <tr key={row.condition_id ?? idx}>
+                      <td>{row.question ?? row.title}</td>
+                      <td>{fmtPct(row.old_price)}</td>
+                      <td>{fmtPct(row.new_price)}</td>
+                      <td
+                        style={{
+                          color:
+                            typeof row.price_diff === 'number'
+                              ? row.price_diff > 0
+                                ? 'var(--clr-green, #4caf50)'
+                                : row.price_diff < 0
+                                ? 'var(--clr-red, #f44336)'
+                                : undefined
+                              : undefined,
+                        }}
+                      >
+                        {typeof row.price_diff === 'number'
+                          ? `${(row.price_diff * 100).toFixed(1)}pp`
+                          : row.price_diff}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {Array.isArray(midMoves.data) && midMoves.data.length === 0 &&
+            !midMoves.loading && !midMoves.error && (
+            <span className="muted">
+              No mid-move data yet — enable ENABLE_MARKET_SNAPSHOT=1 on the
+              exporter.
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* ── Top Events by Volume ── */}
+      <div className="panel" style={{ marginTop: '1rem' }}>
+        <div className="panel-header">
+          <div className="panel-title">Top Events by Volume</div>
+        </div>
+        <div className="panel-body">
+          {topEventsVolume.loading && <div className="loading">Loading events…</div>}
+          {topEventsVolume.error   && <div className="error">{topEventsVolume.error.message}</div>}
+          {Array.isArray(topEventsVolume.data) && topEventsVolume.data.length > 0 && (
+            <div className="markets-table-scroll">
+              <table className="markets-table">
+                <thead>
+                  <tr>
+                    <th>Event</th>
+                    <th>Markets</th>
+                    <th>Total Volume (USDC)</th>
+                    <th>Total Liquidity (USDC)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topEventsVolume.data.slice(0, 15).map((row, idx) => (
+                    <tr key={row.event_slug ?? row.event_title ?? idx}>
+                      <td>{row.event_title ?? row.event_slug ?? row.title}</td>
+                      <td>{fmtNum(row.n_markets)}</td>
+                      <td>{fmtNum(row.total_volume)}</td>
+                      <td>{fmtNum(row.total_liquidity)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Top Events by Liquidity ── */}
+      <div className="panel" style={{ marginTop: '1rem' }}>
+        <div className="panel-header">
+          <div className="panel-title">Top Events by Liquidity</div>
+        </div>
+        <div className="panel-body">
+          {topEventsLiq.loading && <div className="loading">Loading events…</div>}
+          {topEventsLiq.error   && <div className="error">{topEventsLiq.error.message}</div>}
+          {Array.isArray(topEventsLiq.data) && topEventsLiq.data.length > 0 && (
+            <div className="markets-table-scroll">
+              <table className="markets-table">
+                <thead>
+                  <tr>
+                    <th>Event</th>
+                    <th>Markets</th>
+                    <th>Total Liquidity (USDC)</th>
+                    <th>Total Volume (USDC)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topEventsLiq.data.slice(0, 15).map((row, idx) => (
+                    <tr key={row.event_slug ?? row.event_title ?? idx}>
+                      <td>{row.event_title ?? row.event_slug ?? row.title}</td>
+                      <td>{fmtNum(row.n_markets)}</td>
+                      <td>{fmtNum(row.total_liquidity)}</td>
+                      <td>{fmtNum(row.total_volume)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Expiring Soon ── */}
+      <div className="panel" style={{ marginTop: '1rem', marginBottom: '1.5rem' }}>
+        <div className="panel-header">
+          <div className="panel-title">Markets Expiring Soon (48h)</div>
+        </div>
+        <div className="panel-body">
+          {expiringSoon.loading && <div className="loading">Loading expiring markets…</div>}
+          {expiringSoon.error   && <div className="error">{expiringSoon.error.message}</div>}
+          {Array.isArray(expiringSoon.data) && expiringSoon.data.length > 0 && (
+            <div className="markets-table-scroll">
+              <table className="markets-table">
+                <thead>
+                  <tr>
+                    <th>Question</th>
+                    <th>End Date</th>
+                    <th>Volume (USDC)</th>
+                    <th>Liquidity (USDC)</th>
+                    <th>Yes Price</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {expiringSoon.data.slice(0, 15).map((row, idx) => (
+                    <tr key={row.condition_id ?? idx}>
+                      <td>{row.question ?? row.title}</td>
+                      <td>{row.end_date}</td>
+                      <td>{fmtNum(row.volume)}</td>
+                      <td>{fmtNum(row.liquidity)}</td>
+                      <td>{fmtPct(row.outcome_yes_price)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {Array.isArray(expiringSoon.data) && expiringSoon.data.length === 0 &&
+            !expiringSoon.loading && !expiringSoon.error && (
+            <span className="muted">No markets expiring within 48 hours.</span>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Polymarket Screener ─────────────────────────────────────────────────────
+
+function PolyScreenerPage() {
+  const [form, setForm] = useState({
+    minVolume: '',
+    minLiquidity: '',
+    category: '',
+    sortBy: 'tradability_score',
+    sortDir: 'desc',
+  })
+  const [refreshNonce, setRefreshNonce] = useState(0)
+  const [allRows, setAllRows] = useState([])
+  const [filteredRows, setFilteredRows] = useState([])
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(25)
+
+  const screener = usePolyApi('/markets/screener', {
+    limit: 250,
+    _refresh: refreshNonce,
+  })
+
+  useEffect(() => {
+    if (Array.isArray(screener.data)) {
+      setAllRows(screener.data)
+      setFilteredRows(screener.data)
+      setPage(1)
+    }
+  }, [screener.data])
+
+  const passMin = (value, minValue) => {
+    if (minValue === '' || minValue === null || minValue === undefined) return true
+    const min = Number(minValue)
+    if (Number.isNaN(min)) return true
+    const num = Number(value)
+    if (Number.isNaN(num)) return false
+    return num >= min
+  }
+
+  const passCategory = (value, catFilter) => {
+    if (!catFilter) return true
+    return (value ?? '').toLowerCase().includes(catFilter.toLowerCase())
+  }
+
+  const sortRows = (rows) => {
+    const sorted = [...rows]
+    sorted.sort((a, b) => {
+      const aVal = a[form.sortBy]
+      const bVal = b[form.sortBy]
+      if (typeof aVal === 'string' && typeof bVal === 'string') {
+        return form.sortDir === 'asc'
+          ? aVal.localeCompare(bVal)
+          : bVal.localeCompare(aVal)
+      }
+      const aNum = Number(aVal)
+      const bNum = Number(bVal)
+      const safeA = Number.isFinite(aNum) ? aNum : -Infinity
+      const safeB = Number.isFinite(bNum) ? bNum : -Infinity
+      return form.sortDir === 'asc' ? safeA - safeB : safeB - safeA
+    })
+    return sorted
+  }
+
+  const handleChange = (e) => {
+    const { name, value } = e.target
+    setForm((prev) => ({ ...prev, [name]: value }))
+  }
+
+  const applyFilters = () => {
+    const filtered = allRows.filter(
+      (row) =>
+        passMin(row.volume, form.minVolume) &&
+        passMin(row.liquidity, form.minLiquidity) &&
+        passCategory(row.category, form.category),
+    )
+    setFilteredRows(sortRows(filtered))
+    setPage(1)
+  }
+
+  const resetFilters = () => {
+    setForm({ minVolume: '', minLiquidity: '', category: '', sortBy: 'tradability_score', sortDir: 'desc' })
+    setFilteredRows(allRows)
+    setPage(1)
+  }
+
+  const refreshOnly = () => setRefreshNonce((n) => n + 1)
+
+  const totalPages = Math.max(1, Math.ceil((filteredRows?.length ?? 0) / pageSize) || 1)
+  useEffect(() => {
+    setPage((prev) => Math.min(prev, totalPages))
+  }, [totalPages])
+
+  const pageStart = (page - 1) * pageSize
+  const pageRows = filteredRows.slice(pageStart, pageStart + pageSize)
+
+  const fmtPct = (v) => (typeof v === 'number' ? `${(v * 100).toFixed(1)}%` : v)
+  const fmtNum = (v) => (typeof v === 'number' ? v.toLocaleString('en-US') : v)
+  const fmtDec = (v, d = 2) => (typeof v === 'number' ? v.toFixed(d) : v)
+
+  return (
+    <div className="dashboard">
+      <p className="seo-blurb">
+        Polymarket screener — filter by volume, liquidity, and category; sort
+        by tradability score, churn, uncertainty, or any metric.
+      </p>
+      <h2>Polymarket Screener</h2>
+
+      <div className="screener-filters">
+        <div className="screener-filter-group">
+          <label htmlFor="poly-minVolume">Min Volume (USDC)</label>
+          <input
+            id="poly-minVolume"
+            name="minVolume"
+            type="number"
+            min="0"
+            value={form.minVolume}
+            onChange={handleChange}
+            placeholder="e.g. 100000"
+          />
+        </div>
+        <div className="screener-filter-group">
+          <label htmlFor="poly-minLiquidity">Min Liquidity (USDC)</label>
+          <input
+            id="poly-minLiquidity"
+            name="minLiquidity"
+            type="number"
+            min="0"
+            value={form.minLiquidity}
+            onChange={handleChange}
+            placeholder="e.g. 5000"
+          />
+        </div>
+        <div className="screener-filter-group">
+          <label htmlFor="poly-category">Category</label>
+          <input
+            id="poly-category"
+            name="category"
+            type="text"
+            value={form.category}
+            onChange={handleChange}
+            placeholder="e.g. Politics"
+          />
+        </div>
+        <div className="screener-filter-group">
+          <label htmlFor="poly-sortBy">Order by</label>
+          <select id="poly-sortBy" name="sortBy" value={form.sortBy} onChange={handleChange}>
+            <option value="tradability_score">Tradability score</option>
+            <option value="volume">Volume</option>
+            <option value="volume_24hr">Volume 24h</option>
+            <option value="liquidity">Liquidity</option>
+            <option value="churn_rate">Churn rate</option>
+            <option value="uncertainty">Uncertainty</option>
+          </select>
+        </div>
+        <div className="screener-filter-group">
+          <label htmlFor="poly-sortDir">Direction</label>
+          <select id="poly-sortDir" name="sortDir" value={form.sortDir} onChange={handleChange}>
+            <option value="desc">Desc</option>
+            <option value="asc">Asc</option>
+          </select>
+        </div>
+        <div className="screener-filter-actions">
+          <button type="button" onClick={applyFilters}>Apply filters</button>
+          <button type="button" onClick={refreshOnly}>Refresh</button>
+          <button type="button" onClick={resetFilters}>Reset</button>
+        </div>
+      </div>
+
+      <div className="panel" style={{ marginTop: '0.5rem', marginBottom: '1.5rem' }}>
+        <div className="panel-header">
+          <div className="panel-title">High-Activity Markets (Polymarket)</div>
+        </div>
+        <div className="panel-body">
+          {screener.loading && <div className="loading">Loading screener…</div>}
+          {screener.error   && <div className="error">{screener.error.message}</div>}
+          {filteredRows.length > 0 && (
+            <div className="markets-table-scroll">
+              <div className="screener-table-controls">
+                <div className="screener-results-meta">
+                  Showing {filteredRows.length === 0 ? 0 : pageStart + 1}–
+                  {Math.min(pageStart + pageSize, filteredRows.length)} of{' '}
+                  {filteredRows.length}
+                </div>
+                <div className="screener-page-size">
+                  <label htmlFor="poly-pageSize">Results per page</label>
+                  <select
+                    id="poly-pageSize"
+                    value={pageSize}
+                    onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1) }}
+                  >
+                    {[10, 25, 50, 100].map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="screener-pagination">
+                  <button type="button" onClick={() => setPage(1)} disabled={page === 1}>First</button>
+                  <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>Prev</button>
+                  <span className="screener-page-indicator">Page {page} of {totalPages}</span>
+                  <button type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next</button>
+                  <button type="button" onClick={() => setPage(totalPages)} disabled={page === totalPages}>Last</button>
+                </div>
+              </div>
+              <table className="markets-table">
+                <thead>
+                  <tr>
+                    <th>Question</th>
+                    <th>Category</th>
+                    <th>Volume (USDC)</th>
+                    <th>Vol 24h (USDC)</th>
+                    <th>Liquidity (USDC)</th>
+                    <th>Yes</th>
+                    <th>No</th>
+                    <th>Churn</th>
+                    <th>Uncertainty</th>
+                    <th>Tradability</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pageRows.map((row, idx) => (
+                    <tr key={row.condition_id ?? idx}>
+                      <td>{row.question ?? row.title}</td>
+                      <td>{row.category ?? '—'}</td>
+                      <td>{fmtNum(row.volume)}</td>
+                      <td>{fmtNum(row.volume_24hr)}</td>
+                      <td>{fmtNum(row.liquidity)}</td>
+                      <td>{fmtPct(row.outcome_yes_price)}</td>
+                      <td>{fmtPct(row.outcome_no_price)}</td>
+                      <td>{fmtDec(row.churn_rate)}</td>
+                      <td>{fmtDec(row.uncertainty)}</td>
+                      <td>{fmtDec(row.tradability_score)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {Array.isArray(screener.data) && filteredRows.length === 0 &&
+            !screener.loading && !screener.error && (
+            <span className="muted">No screener results available.</span>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function App() {
   return (
     <div className="app-shell">
@@ -893,8 +1494,14 @@ function App() {
           <Link to="/dashboard" className="app-link" style={{ marginRight: '1rem' }}>
             Dashboard
           </Link>
-          <Link to="/screener" className="app-link">
+          <Link to="/screener" className="app-link" style={{ marginRight: '1rem' }}>
             Screener
+          </Link>
+          <Link to="/poly-dashboard" className="app-link" style={{ marginRight: '1rem' }}>
+            Poly Dashboard
+          </Link>
+          <Link to="/poly-screener" className="app-link">
+            Poly Screener
           </Link>
         </nav>
       </header>
@@ -903,6 +1510,8 @@ function App() {
           <Route path="/" element={<LandingPage />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/screener" element={<ScreenerPage />} />
+          <Route path="/poly-dashboard" element={<PolyDashboard />} />
+          <Route path="/poly-screener" element={<PolyScreenerPage />} />
         </Routes>
       </main>
     </div>
