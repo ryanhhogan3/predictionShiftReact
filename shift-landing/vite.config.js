@@ -12,8 +12,8 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
-      // Polymarket API — strips /poly prefix before forwarding to port 8001
-      '/poly': {
+      // Polymarket API — only match /poly/* requests, then strip /poly prefix
+      '/poly/': {
         target: 'http://localhost:8001',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/poly/, ''),

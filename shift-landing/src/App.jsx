@@ -8,12 +8,15 @@ const API_BASE =
   import.meta.env.VITE_API_BASE ||
   'https://api.predictionshift.com'
 
-// Polymarket API — in dev the Vite proxy intercepts /poly/* and strips the
-// prefix before forwarding to http://localhost:8001.  In production nginx
-// does the same; set VITE_POLY_API_BASE to override for direct port access.
+// Polymarket API — default to the hosted API to avoid local proxy failures
+// when port 8001 is not running. Set VITE_POLY_API_BASE=/poly to use the
+// local Vite proxy in development.
 const POLY_API_BASE =
   import.meta.env.VITE_POLY_API_BASE ||
-  (import.meta.env.DEV ? '/poly' : 'https://api.predictionshift.com/poly')
+  'https://api.predictionshift.com/poly'
+
+const KALSHI_LOGO_URL = '/kalshi-logo.svg'
+const POLYMARKET_LOGO_URL = '/poly-icon-blue.svg'
 
 export async function getHealth() {
   const response = await fetch(`${API_BASE}/health`)
@@ -464,7 +467,15 @@ function Dashboard() {
       <p className="seo-blurb">
         Market Shift Index 6-hour deltas, real-time market movers, top events by traded volume, spread blowouts, expiring contracts, and global order-flow metrics across prediction markets.
       </p>
-      <h2>Prediction Market Dashboard</h2>
+      <h2 className="dashboard-title">
+        <img
+          src={KALSHI_LOGO_URL}
+          alt="Kalshi logo"
+          className="dashboard-title-logo"
+          loading="lazy"
+        />
+        <span>Prediction Market Dashboard</span>
+      </h2>
 
       <Last24hChangesPanel defaultProvider="kalshi" />
 
@@ -1238,7 +1249,15 @@ function PolyDashboard() {
         Polymarket real-time analytics: vol index, market mid-moves, top events
         by volume and liquidity, expiring markets, and global USDC flow metrics.
       </p>
-      <h2>Polymarket Dashboard</h2>
+      <h2 className="dashboard-title">
+        <img
+          src={POLYMARKET_LOGO_URL}
+          alt="Polymarket logo"
+          className="dashboard-title-logo"
+          loading="lazy"
+        />
+        <span>Polymarket Dashboard</span>
+      </h2>
 
       <Last24hChangesPanel defaultProvider="poly" />
 
