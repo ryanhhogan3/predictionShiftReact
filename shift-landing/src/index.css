@@ -304,11 +304,15 @@ h1 {
 }
 
 .dashboard-title-logo {
-  width: 2rem;
   height: 2rem;
+  width: auto;
   border-radius: 0.4rem;
-  object-fit: cover;
+  object-fit: contain;
   flex-shrink: 0;
+}
+
+.dashboard-title-logo--kalshi {
+  height: 2.2rem;
 }
 
 .dashboard-grid {

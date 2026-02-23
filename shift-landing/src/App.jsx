@@ -471,7 +471,7 @@ function Dashboard() {
         <img
           src={KALSHI_LOGO_URL}
           alt="Kalshi logo"
-          className="dashboard-title-logo"
+          className="dashboard-title-logo dashboard-title-logo--kalshi"
           loading="lazy"
         />
         <span>Prediction Market Dashboard</span>
