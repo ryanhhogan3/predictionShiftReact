@@ -1785,61 +1785,295 @@ function PolyScreenerPage() {
 
 function buildNormPoints(values, w = 100, h = 40, pad = 4) {
   if (!values || values.length < 2) return ''
-  const min = Math.min(...values)
-  const max = Math.max(...values)
+  const validValues = values.filter(v => typeof v === 'number' && !isNaN(v));
+  if (validValues.length < 2) return ''
+  const min = Math.min(...validValues)
+  const max = Math.max(...validValues)
   const span = max - min || 1
   return values
     .map((v, i) => {
+      if (typeof v !== 'number' || isNaN(v)) return null;
       const x = (i / (values.length - 1)) * w
-      const norm = (v - min) / span
+      // Clamp the value between min and max to ensure it never goes out of bounds
+      const clampedV = Math.max(min, Math.min(max, v));
+      const norm = (clampedV - min) / span
       const y = h - pad - norm * (h - pad * 2)
       return `${x},${y}`
     })
+    .filter(Boolean)
     .join(' ')
 }
 
-function DualLineChart({ series, loading, error }) {
-  const COLORS = ['#7c6af7', '#38bdf8']
+function ModernLineChart({ series, loading, error, showAxes = true, yAxisFormatter = (v) => v, xAxisFormatter = (v) => v }) {
+  const COLORS = ['#7c6af7', '#38bdf8', '#10b981', '#f59e0b', '#ef4444']
+  const [hoveredIndex, setHoveredIndex] = useState(null)
+
   if (loading) return <div className="loading">Loading chart…</div>
   if (error) return <div className="error">{error.message}</div>
   if (!series || series.every((s) => !s.values || s.values.length < 2)) {
     return <span className="muted">No chart data yet.</span>
   }
+
+  // Find global min/max for all series to scale them together if needed
+  // Or scale them independently if they have vastly different ranges
+  // For simplicity, we'll scale each series independently to fit the 0-40 viewBox height
+  // but we'll calculate the min/max for the first series to show on the Y axis
+  const primarySeries = series[0];
+  const validValues = primarySeries.values.filter(v => typeof v === 'number' && !isNaN(v));
+  const primaryMin = validValues.length ? Math.min(...validValues) : 0;
+  const primaryMax = validValues.length ? Math.max(...validValues) : 100;
+  const primarySpan = primaryMax - primaryMin || 1;
+
+  const yAxisLabels = [
+    primaryMax,
+    primaryMin + primarySpan * 0.75,
+    primaryMin + primarySpan * 0.5,
+    primaryMin + primarySpan * 0.25,
+    primaryMin
+  ];
+
+  // Generate X-axis labels (e.g., 3 evenly spaced labels to prevent overlap)
+  const xAxisLabels = [];
+  if (primarySeries.times && primarySeries.times.length > 0) {
+    const len = primarySeries.times.length;
+    const numLabels = Math.min(3, len); // Use 3 labels max
+    
+    for (let i = 0; i < numLabels; i++) {
+      // Calculate index: 0, middle, end
+      const index = i === 0 ? 0 : i === numLabels - 1 ? len - 1 : Math.floor((len - 1) * (i / (numLabels - 1)));
+      
+      // Avoid duplicates if len is very small
+      if (!xAxisLabels.find(l => l.index === index)) {
+        xAxisLabels.push({
+          index,
+          time: primarySeries.times[index],
+          percent: len > 1 ? (index / (len - 1)) * 100 : 50
+        });
+      }
+    }
+  }
+
+  const handleMouseMove = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const width = rect.width;
+    const percentage = x / width;
+    const dataLength = primarySeries.values.length;
+    const index = Math.min(Math.max(Math.round(percentage * (dataLength - 1)), 0), dataLength - 1);
+    setHoveredIndex(index);
+  };
+
+  const handleMouseLeave = () => {
+    setHoveredIndex(null);
+  };
+
   return (
-    <div className="dual-chart-wrapper">
-      <svg
-        className="dual-chart"
-        viewBox="0 0 100 40"
-        preserveAspectRatio="none"
-        style={{ width: '100%', height: '6rem', display: 'block' }}
-      >
-        {series.map((s, si) => {
-          const pts = buildNormPoints(s.values)
-          return pts ? (
-            <polyline
-              key={si}
-              points={pts}
-              fill="none"
-              stroke={s.color ?? COLORS[si % COLORS.length]}
-              strokeWidth="1.4"
-              vectorEffect="non-scaling-stroke"
-            />
-          ) : null
-        })}
-      </svg>
-      <div className="dual-chart-legend">
+    <div className="modern-chart-wrapper" style={{ background: '#0f172a', borderRadius: '12px', padding: '1.5rem', border: '1px solid #1e293b', position: 'relative' }}>
+      <div className="dual-chart-legend" style={{ marginBottom: '1rem', display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+        {hoveredIndex !== null && primarySeries.times && primarySeries.times[hoveredIndex] && (
+          <span style={{ color: '#94a3b8', fontSize: '0.875rem', marginRight: '1rem', fontWeight: 'bold' }}>
+            {xAxisFormatter(primarySeries.times[hoveredIndex])}
+          </span>
+        )}
         {series.map((s, si) => (
-          <span key={si} className="legend-item">
+          <span key={si} className="legend-item" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', color: '#cbd5e1' }}>
             <span
               className="legend-dot"
-              style={{ background: s.color ?? COLORS[si % COLORS.length] }}
+              style={{ background: s.color ?? COLORS[si % COLORS.length], width: '10px', height: '10px', borderRadius: '50%', display: 'inline-block' }}
             />
             {s.label}
+            {hoveredIndex !== null && s.values[hoveredIndex] !== undefined && s.values[hoveredIndex] !== null && (
+              <strong style={{ color: '#fff', marginLeft: '4px' }}>
+                {yAxisFormatter(s.values[hoveredIndex])}
+              </strong>
+            )}
           </span>
         ))}
       </div>
+      
+      <div style={{ display: 'flex', width: '100%', height: '14rem' }}>
+        {showAxes && (
+          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', paddingRight: '10px', paddingBottom: '20px', color: '#64748b', fontSize: '0.7rem', textAlign: 'right', width: '50px', flexShrink: 0 }}>
+            {yAxisLabels.map((val, i) => (
+              <span key={i}>{yAxisFormatter(val)}</span>
+            ))}
+          </div>
+        )}
+        
+        <div style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, height: '100%' }}>
+          <div 
+            style={{ position: 'relative', flexGrow: 1, cursor: 'crosshair', overflow: 'hidden' }}
+            onMouseMove={handleMouseMove}
+            onMouseLeave={handleMouseLeave}
+          >
+            <svg
+              className="modern-chart"
+              viewBox="0 0 100 40"
+              preserveAspectRatio="none"
+              style={{ width: '100%', height: '100%', display: 'block', overflow: 'hidden' }}
+            >
+              {/* Grid lines */}
+              <line x1="0" y1="0" x2="100" y2="0" stroke="#1e293b" strokeWidth="0.5" strokeDasharray="2 2" />
+              <line x1="0" y1="10" x2="100" y2="10" stroke="#1e293b" strokeWidth="0.5" strokeDasharray="2 2" />
+              <line x1="0" y1="20" x2="100" y2="20" stroke="#1e293b" strokeWidth="0.5" strokeDasharray="2 2" />
+              <line x1="0" y1="30" x2="100" y2="30" stroke="#1e293b" strokeWidth="0.5" strokeDasharray="2 2" />
+              <line x1="0" y1="40" x2="100" y2="40" stroke="#1e293b" strokeWidth="0.5" strokeDasharray="2 2" />
+              
+              {series.map((s, si) => {
+                const pts = buildNormPoints(s.values)
+                if (!pts) return null;
+                const color = s.color ?? COLORS[si % COLORS.length];
+                const fillId = `gradient-${s.label.replace(/[^a-zA-Z0-9]/g, '-')}-${si}`;
+                return (
+                  <g key={si}>
+                    <defs>
+                      <linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={color} stopOpacity="0.3" />
+                        <stop offset="100%" stopColor={color} stopOpacity="0.0" />
+                      </linearGradient>
+                    </defs>
+                    <polygon
+                      points={`0,40 ${pts} 100,40`}
+                      fill={`url(#${fillId})`}
+                    />
+                    <polyline
+                      points={pts}
+                      fill="none"
+                      stroke={color}
+                      strokeWidth="1.5"
+                      vectorEffect="non-scaling-stroke"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </g>
+                )
+              })}
+
+              {/* Hover Line */}
+              {hoveredIndex !== null && (
+                <line 
+                  x1={(hoveredIndex / (primarySeries.values.length - 1)) * 100} 
+                  y1="0" 
+                  x2={(hoveredIndex / (primarySeries.values.length - 1)) * 100} 
+                  y2="40" 
+                  stroke="#94a3b8" 
+                  strokeWidth="0.5" 
+                  strokeDasharray="1 1" 
+                  vectorEffect="non-scaling-stroke"
+                />
+              )}
+            </svg>
+          </div>
+          
+          {/* X-Axis Labels */}
+          {showAxes && xAxisLabels.length > 0 && (
+            <div style={{ position: 'relative', height: '20px', marginTop: '8px', color: '#64748b', fontSize: '0.7rem' }}>
+              {xAxisLabels.map((label, i) => {
+                // Adjust alignment for first and last labels to prevent overflow
+                let transform = `translateX(-50%)`;
+                let left = `${label.percent}%`;
+                if (i === 0) {
+                  transform = `translateX(0)`;
+                  left = `0%`;
+                } else if (i === xAxisLabels.length - 1) {
+                  transform = `translateX(-100%)`;
+                  left = `100%`;
+                }
+                
+                return (
+                  <span 
+                    key={i} 
+                    style={{ 
+                      position: 'absolute', 
+                      left: left, 
+                      transform: transform,
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    {xAxisFormatter(label.time)}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
+}
+
+function VolatilityGauge({ value, min = 0, max = 100, label }) {
+  const numericValue = parseFloat(value) || 0;
+  const clampedValue = Math.min(Math.max(numericValue, min), max);
+  const percentage = max > min ? (clampedValue - min) / (max - min) : 0;
+  
+  const radius = 40;
+  const circumference = Math.PI * radius;
+  const strokeDashoffset = circumference - percentage * circumference;
+
+  let statusText = "NORMAL";
+  let statusColor = "#f59e0b";
+  if (percentage < 0.33) {
+    statusText = "LOW VOLATILITY";
+    statusColor = "#10b981";
+  } else if (percentage > 0.66) {
+    statusText = "HIGH VOLATILITY";
+    statusColor = "#ef4444";
+  }
+
+  return (
+    <div className="vol-gauge-container" style={{ textAlign: 'center', margin: '2rem 0' }}>
+      <div style={{ position: 'relative', width: '240px', height: '130px', margin: '0 auto' }}>
+        <svg viewBox="0 0 100 55" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
+          <path
+            d="M 10 50 A 40 40 0 0 1 90 50"
+            fill="none"
+            stroke="#1e293b"
+            strokeWidth="12"
+            strokeLinecap="round"
+          />
+          <path
+            d="M 10 50 A 40 40 0 0 1 90 50"
+            fill="none"
+            stroke="url(#gauge-gradient)"
+            strokeWidth="12"
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={strokeDashoffset}
+            style={{ transition: 'stroke-dashoffset 1s ease-out' }}
+          />
+          <defs>
+            <linearGradient id="gauge-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="#10b981" />
+              <stop offset="50%" stopColor="#f59e0b" />
+              <stop offset="100%" stopColor="#ef4444" />
+            </linearGradient>
+          </defs>
+        </svg>
+        <div style={{
+          position: 'absolute',
+          bottom: '-10px',
+          left: '0',
+          width: '100%',
+          textAlign: 'center',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center'
+        }}>
+          <span style={{ fontSize: '3.5rem', fontWeight: '800', lineHeight: '1', color: '#f8fafc', textShadow: '0 2px 10px rgba(0,0,0,0.2)' }}>
+            {value}
+          </span>
+          <span style={{ fontSize: '0.875rem', color: statusColor, fontWeight: '700', letterSpacing: '0.05em', marginTop: '0.5rem' }}>
+            {statusText}
+          </span>
+        </div>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', width: '220px', margin: '1.5rem auto 0', fontSize: '0.75rem', color: '#64748b', fontWeight: '700', letterSpacing: '0.05em' }}>
+        <span>LOW</span>
+        <span>HIGH</span>
+      </div>
+    </div>
+  );
 }
 
 function VolIndexPage() {
@@ -1850,19 +2084,22 @@ function VolIndexPage() {
   // ── Kalshi index (volume + OI + breadth normalized composite) ──
   let kalshiIndexPoints = ''
   let kalshiLatest = null
+  let kalshiValues = []
+  let kalshiTimes = []
   if (Array.isArray(kalshiDeltas.data) && kalshiDeltas.data.length > 0) {
     const rows = [...kalshiDeltas.data].reverse()
     const baseVol  = rows[0].d_volume_6h || 1
     const baseOi   = rows[0].d_oi_6h || 1
     const baseWide = rows[0].d_wide_6h || 1
-    const values = rows.map((r) => {
+    kalshiValues = rows.map((r) => {
       const relVol  = r.d_volume_6h / baseVol
       const relOi   = r.d_oi_6h / baseOi
       const relWide = r.d_wide_6h / baseWide
       return (100 * (relVol + relOi + relWide)) / 3
     })
-    kalshiIndexPoints = buildNormPoints(values)
-    kalshiLatest = values[values.length - 1]?.toFixed(1)
+    kalshiTimes = rows.map(r => r.snap_ts)
+    kalshiIndexPoints = buildNormPoints(kalshiValues)
+    kalshiLatest = kalshiValues[kalshiValues.length - 1]?.toFixed(1)
   }
 
   // ── Kalshi Δ volume / Δ OI chart ──
@@ -1870,8 +2107,8 @@ function VolIndexPage() {
     ? (() => {
         const rows = [...kalshiDeltas.data].reverse()
         return [
-          { label: 'Δ Volume (6h)', values: rows.map((r) => r.d_volume_6h ?? 0), color: '#7c6af7' },
-          { label: 'Δ Open Interest (6h)', values: rows.map((r) => r.d_oi_6h ?? 0), color: '#38bdf8' },
+          { label: 'Δ Volume (6h)', values: rows.map((r) => r.d_volume_6h ?? 0), times: rows.map(r => r.snap_ts), color: '#7c6af7' },
+          { label: 'Δ Open Interest (6h)', values: rows.map((r) => r.d_oi_6h ?? 0), times: rows.map(r => r.snap_ts), color: '#38bdf8' },
         ]
       })()
     : null
@@ -1879,10 +2116,15 @@ function VolIndexPage() {
   // ── Poly vol index (log-odds, annualized) ──
   let polyIndexPoints = ''
   let polyLatest = null
-  if (Array.isArray(polyVolIndex.data) && polyVolIndex.data.length > 0) {
-    const values = polyVolIndex.data.map((r) => r.vol_index ?? 0)
-    polyIndexPoints = buildNormPoints(values)
-    polyLatest = values[values.length - 1]?.toFixed(4)
+  let polyValues = []
+  let polyTimes = []
+  const polyVolSeries = polyVolIndex.data?.series || (Array.isArray(polyVolIndex.data) ? polyVolIndex.data : [])
+  if (polyVolSeries.length > 0) {
+    const rows = [...polyVolSeries].reverse()
+    polyValues = rows.map((r) => r.vol_index ?? 0)
+    polyTimes = rows.map((r) => r.snap_ts ?? '')
+    polyIndexPoints = buildNormPoints(polyValues)
+    polyLatest = polyValues[polyValues.length - 1]?.toFixed(4)
   }
 
   // ── Poly Δ volume / Δ liquidity chart ──
@@ -1890,149 +2132,153 @@ function VolIndexPage() {
     ? (() => {
         const rows = [...polyDeltas.data].reverse()
         return [
-          { label: 'Δ Volume (USDC)', values: rows.map((r) => r.d_volume ?? 0), color: '#7c6af7' },
-          { label: 'Δ Liquidity (USDC)', values: rows.map((r) => r.d_liquidity ?? 0), color: '#38bdf8' },
+          { label: 'Δ Volume (USDC)', values: rows.map((r) => r.d_volume ?? 0), times: rows.map(r => r.snap_ts), color: '#7c6af7' },
+          { label: 'Δ Liquidity (USDC)', values: rows.map((r) => r.d_liquidity ?? 0), times: rows.map(r => r.snap_ts), color: '#38bdf8' },
         ]
       })()
     : null
 
+  // ── Global Volatility Index (Kalshi Only) ──
+  let combinedLatest = null;
+  let combinedValues = [];
+  let combinedTimes = [];
+  let combinedIndexPoints = '';
+
+  const isCombinedLoading = kalshiDeltas.loading;
+
+  if (kalshiValues.length > 0) {
+    const kalshiMax = Math.max(...kalshiValues) || 1;
+    combinedValues = kalshiValues.map(k => {
+      const val = (k / kalshiMax) * 100;
+      return isNaN(val) ? null : val;
+    });
+    combinedTimes = kalshiTimes;
+    combinedIndexPoints = buildNormPoints(combinedValues);
+    const validCombined = combinedValues.filter(v => v !== null);
+    combinedLatest = validCombined[validCombined.length - 1]?.toFixed(1);
+  }
+
   return (
     <div className="dashboard">
       <p className="seo-blurb">
-        Side-by-side realized volatility indexes for Kalshi and Polymarket —
-        Kalshi Market Shift Index from 6-hour volume, open-interest, and breadth
-        deltas; Polymarket log-odds vol index liquidity-weighted across all
-        tracked contracts.
+        A realized volatility index based on Kalshi data —
+        tracking Kalshi's Market Shift Index (volume, open-interest, and breadth deltas).
       </p>
-      <h2>Vol Index</h2>
+      <h2>Global Volatility Index</h2>
 
       <div
         className="vol-index-grid"
         style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
-          gap: '1rem',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '2rem',
           marginTop: '1.5rem',
         }}
       >
-        {/* ── Kalshi ── */}
         <div className="panel">
           <div className="panel-header">
-            <div className="panel-title">Kalshi — Market Shift Index</div>
+            <div className="panel-title">Market Volatility</div>
           </div>
           <div className="panel-body">
-            {kalshiDeltas.loading && <div className="loading">Loading…</div>}
-            {kalshiDeltas.error && (
-              <div className="error">{kalshiDeltas.error.message}</div>
+            {isCombinedLoading && <div className="loading">Loading…</div>}
+            {!isCombinedLoading && kalshiDeltas.error && (
+              <div className="error">
+                Failed to load volatility data.
+              </div>
             )}
-            {kalshiIndexPoints && (
-              <>
-                <div className="vix-chart-wrapper">
-                  <svg
-                    className="vix-chart"
-                    viewBox="0 0 100 40"
-                    preserveAspectRatio="none"
-                  >
-                    <polyline className="vix-chart-path" points={kalshiIndexPoints} />
-                  </svg>
-                </div>
-                <div className="vix-chart-label">
-                  Latest: <strong>{kalshiLatest}</strong>
-                </div>
-              </>
+            {!isCombinedLoading && combinedIndexPoints && (
+              <VolatilityGauge 
+                value={combinedLatest} 
+                min={0} 
+                max={100} 
+                label="Global Volatility Index" 
+              />
             )}
-            {!kalshiIndexPoints && !kalshiDeltas.loading && !kalshiDeltas.error && (
-              <span className="muted">No Kalshi index data available.</span>
+            {!isCombinedLoading && !combinedIndexPoints && (
+              <span className="muted">No volatility index data available.</span>
             )}
 
-            <div style={{ marginTop: '1.25rem' }}>
+            <p className="panel-methodology" style={{ marginTop: '1rem', marginBottom: '2rem' }}>
+              <strong>Methodology:</strong> The Global Volatility Index is a measure that 
+              synthesizes activity across Kalshi. It normalizes Kalshi's Market Shift Index 
+              (which tracks 6-hour changes in volume, open interest, and market breadth). 
+              The resulting score is scaled from 0 to 100, where higher values indicate periods 
+              of rapid collective repricing, elevated order flow, and broad market uncertainty.
+            </p>
+
+            <div style={{ marginTop: '1.25rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.5rem' }}>
+              <div>
+                <div
+                  className="panel-section-label"
+                  style={{ fontSize: '0.75rem', opacity: 0.6, marginBottom: '0.4rem' }}
+                >
+                  KALSHI: Δ VOLUME &amp; Δ OPEN INTEREST (6h)
+                </div>
+                <ModernLineChart
+                  series={kalshiChartSeries}
+                  loading={kalshiDeltas.loading}
+                  error={kalshiDeltas.error}
+                  yAxisFormatter={(v) => {
+                    if (Math.abs(v) >= 1000000) return (v / 1000000).toFixed(1) + 'M';
+                    if (Math.abs(v) >= 1000) return (v / 1000).toFixed(1) + 'k';
+                    return v.toFixed(0);
+                  }}
+                  xAxisFormatter={(t) => {
+                    if (!t) return '';
+                    const d = new Date(t);
+                    if (isNaN(d.getTime())) return t;
+                    return d.toLocaleString('en-US', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+                  }}
+                />
+              </div>
+              <div>
+                <div
+                  className="panel-section-label"
+                  style={{ fontSize: '0.75rem', opacity: 0.6, marginBottom: '0.4rem' }}
+                >
+                  POLYMARKET: Δ VOLUME &amp; Δ LIQUIDITY (USDC)
+                </div>
+                <ModernLineChart
+                  series={polyChartSeries}
+                  loading={polyDeltas.loading}
+                  error={polyDeltas.error}
+                  yAxisFormatter={(v) => {
+                    if (Math.abs(v) >= 1000000) return '$' + (v / 1000000).toFixed(1) + 'M';
+                    if (Math.abs(v) >= 1000) return '$' + (v / 1000).toFixed(1) + 'k';
+                    return '$' + v.toFixed(0);
+                  }}
+                  xAxisFormatter={(t) => {
+                    if (!t) return '';
+                    const d = new Date(t);
+                    if (isNaN(d.getTime())) return t;
+                    return d.toLocaleString('en-US', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+                  }}
+                />
+              </div>
+            </div>
+
+            <div style={{ marginTop: '2rem' }}>
               <div
                 className="panel-section-label"
                 style={{ fontSize: '0.75rem', opacity: 0.6, marginBottom: '0.4rem' }}
               >
-                Δ VOLUME &amp; Δ OPEN INTEREST (6h windows)
+                HISTORICAL GLOBAL VOLATILITY INDEX
               </div>
-              <DualLineChart
-                series={kalshiChartSeries}
-                loading={kalshiDeltas.loading}
-                error={kalshiDeltas.error}
+              <ModernLineChart
+                series={[{ label: 'Global Volatility Index', values: combinedValues, times: combinedTimes, color: '#f59e0b' }]}
+                loading={isCombinedLoading}
+                error={!kalshiValues.length ? kalshiDeltas.error : null}
+                showAxes={true}
+                yAxisFormatter={(v) => (typeof v === 'number' && !isNaN(v) ? v.toFixed(1) : '')}
+                xAxisFormatter={(t) => {
+                  if (!t) return '';
+                  // Handle both ISO strings and unix timestamps
+                  const d = new Date(t);
+                  if (isNaN(d.getTime())) return t; // fallback if invalid date
+                  return d.toLocaleString('en-US', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+                }}
               />
             </div>
-
-            <p className="panel-methodology" style={{ marginTop: '1rem' }}>
-              <strong>Methodology:</strong> The Kalshi Market Shift Index
-              combines three normalized 6-hour deltas: trading volume
-              (Δ&nbsp;volume), open interest (Δ&nbsp;OI), and market breadth
-              (Δ&nbsp;wide — count of markets with meaningful two-sided
-              liquidity). Each series is normalized relative to the earliest
-              observation in the window, then the three relative values are
-              averaged and scaled to 100. Higher values indicate periods of
-              elevated crowd repricing and order flow. The index is directional
-              only and does not represent a tradable asset or financial advice.
-            </p>
-          </div>
-        </div>
-
-        {/* ── Polymarket ── */}
-        <div className="panel">
-          <div className="panel-header">
-            <div className="panel-title">Polymarket — Realized Log-Odds Vol Index</div>
-          </div>
-          <div className="panel-body">
-            {polyVolIndex.loading && <div className="loading">Loading…</div>}
-            {polyVolIndex.error && (
-              <div className="error">{polyVolIndex.error.message}</div>
-            )}
-            {polyIndexPoints && (
-              <>
-                <div className="vix-chart-wrapper">
-                  <svg
-                    className="vix-chart"
-                    viewBox="0 0 100 40"
-                    preserveAspectRatio="none"
-                  >
-                    <polyline className="vix-chart-path" points={polyIndexPoints} />
-                  </svg>
-                </div>
-                <div className="vix-chart-label">
-                  Latest: <strong>{polyLatest}</strong>
-                </div>
-              </>
-            )}
-            {!polyIndexPoints && !polyVolIndex.loading && !polyVolIndex.error && (
-              <span className="muted">
-                No data yet — enable ENABLE_MARKET_SNAPSHOT=1 on the
-                Polymarket exporter.
-              </span>
-            )}
-
-            <div style={{ marginTop: '1.25rem' }}>
-              <div
-                className="panel-section-label"
-                style={{ fontSize: '0.75rem', opacity: 0.6, marginBottom: '0.4rem' }}
-              >
-                Δ VOLUME &amp; Δ LIQUIDITY (run-over-run, USDC)
-              </div>
-              <DualLineChart
-                series={polyChartSeries}
-                loading={polyDeltas.loading}
-                error={polyDeltas.error}
-              />
-            </div>
-
-            <p className="panel-methodology" style={{ marginTop: '1rem' }}>
-              <strong>Methodology:</strong> The Polymarket Vol Index is a
-              liquidity-weighted annualized realized volatility measure built
-              from log-odds price changes. For each contract the log-odds
-              return is ln(p&nbsp;/&nbsp;(1−p)) where p is the YES price
-              (0–1&nbsp;USDC). Returns are squared, averaged over the sampling
-              window, and annualized by scaling to a full year of windows.
-              Each contract's result is weighted by its USDC liquidity before
-              aggregation, so liquid markets drive the index more than thin
-              ones. Higher values indicate rapid collective repricing across
-              Polymarket contracts. Requires ENABLE_MARKET_SNAPSHOT=1 on the
-              exporter to accumulate price history.
-            </p>
           </div>
         </div>
       </div>
