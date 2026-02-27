@@ -465,7 +465,7 @@ function Dashboard() {
   return (
     <div className="dashboard">
       <p className="seo-blurb">
-        Market Shift Index 6-hour deltas, real-time market movers, top events by traded volume, spread blowouts, expiring contracts, and global order-flow metrics across prediction markets.
+        Market Shift Index 2-hour deltas, real-time market movers, top events by traded volume, spread blowouts, expiring contracts, and global order-flow metrics across prediction markets.
       </p>
       <h2 className="dashboard-title">
         <img
@@ -510,7 +510,7 @@ function Dashboard() {
             </div>
           )}
           <p className="panel-methodology">
-            This index combines 6-hour changes in trading volume, open
+            This index combines 2-hour changes in trading volume, open
             interest, and market breadth into a single normalized score.
             Higher values generally correspond to periods of elevated
             prediction-market activity and crowd repricing, which tend to
@@ -954,9 +954,12 @@ function ScreenerPage() {
       <p className="seo-blurb">
         Interactive prediction market screener filtering by volume, open interest, spread tightness, tradability score, churn rate, and price levels for Kalshi and Polymarket contracts.
       </p>
-      <h2>Market Screener</h2>
+      <h2>Market Screener <span className="coming-soon-badge coming-soon-badge--lg">Coming Soon</span></h2>
+      <div className="coming-soon-banner">
+        This feature is a work in progress. Filtering is currently disabled.
+      </div>
 
-      <div className="screener-filters">
+      <fieldset disabled className="screener-filters screener-fieldset-wip">
         <div className="screener-filter-group">
           <label htmlFor="minVolume">Min Volume</label>
           <input
@@ -1058,7 +1061,7 @@ function ScreenerPage() {
             Reset
           </button>
         </div>
-      </div>
+      </fieldset>
 
       <div className="panel" style={{ marginTop: '0.5rem', marginBottom: '1.5rem' }}>
         <div className="panel-header">
@@ -1639,9 +1642,12 @@ function PolyScreenerPage() {
         Polymarket screener — filter by volume, liquidity, and category; sort
         by tradability score, churn, uncertainty, or any metric.
       </p>
-      <h2>Polymarket Screener</h2>
+      <h2>Polymarket Screener <span className="coming-soon-badge coming-soon-badge--lg">Coming Soon</span></h2>
+      <div className="coming-soon-banner">
+        This feature is a work in progress. Filtering is currently disabled.
+      </div>
 
-      <div className="screener-filters">
+      <fieldset disabled className="screener-filters screener-fieldset-wip">
         <div className="screener-filter-group">
           <label htmlFor="poly-minVolume">Min Volume (USDC)</label>
           <input
@@ -1700,7 +1706,7 @@ function PolyScreenerPage() {
           <button type="button" onClick={refreshOnly}>Refresh</button>
           <button type="button" onClick={resetFilters}>Reset</button>
         </div>
-      </div>
+      </fieldset>
 
       <div className="panel" style={{ marginTop: '0.5rem', marginBottom: '1.5rem' }}>
         <div className="panel-header">
@@ -2201,7 +2207,7 @@ function VolIndexPage() {
             <p className="panel-methodology" style={{ marginTop: '1rem', marginBottom: '2rem' }}>
               <strong>Methodology:</strong> The Global Volatility Index is a measure that 
               synthesizes activity across Kalshi. It normalizes Kalshi's Market Shift Index 
-              (which tracks 6-hour changes in volume, open interest, and market breadth). 
+              (which tracks 2-hour changes in volume, open interest, and market breadth). 
               The resulting score is scaled from 0 to 100, where higher values indicate periods 
               of rapid collective repricing, elevated order flow, and broad market uncertainty.
             </p>
@@ -2307,14 +2313,19 @@ function App() {
           <Link to="/dashboard" className="app-link">
             Kalshi Dashboard
           </Link>
-          <Link to="/screener" className="app-link">
-            Kalshi Screener
-          </Link>
+          <div className="nav-dropdown">
+            <span className="app-link nav-dropdown-trigger">Screeners ▾</span>
+            <div className="nav-dropdown-menu">
+              <Link to="/screener" className="app-link nav-dropdown-item">
+                Kalshi Screener <span className="coming-soon-badge">Coming Soon</span>
+              </Link>
+              <Link to="/poly-screener" className="app-link nav-dropdown-item">
+                Poly Screener <span className="coming-soon-badge">Coming Soon</span>
+              </Link>
+            </div>
+          </div>
           <Link to="/poly-dashboard" className="app-link">
             Poly Dashboard
-          </Link>
-          <Link to="/poly-screener" className="app-link">
-            Poly Screener
           </Link>
           <Link to="/vol-index" className="app-link">
             Vol Index
