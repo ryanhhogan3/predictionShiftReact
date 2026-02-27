@@ -484,13 +484,13 @@ h1 {
 .dashboard-title-logo {
   height: 2rem;
   width: auto;
-  border-radius: 0.4rem;
+  border-radius: 0;
   object-fit: contain;
   flex-shrink: 0;
 }
 
 .dashboard-title-logo--kalshi {
-  height: 2.2rem;
+  height: 1.5rem;
 }
 
 .dashboard-grid {

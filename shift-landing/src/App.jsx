@@ -383,8 +383,8 @@ function Dashboard() {
   const marketMovers = useApi('/market-movers')
   const globalDeltas = useApi('/global-6h-deltas', { limit: 30 })
 
-  let vixPoints = ''
   let latestIndex = null
+  let shiftChartSeries = null
 
   if (Array.isArray(globalDeltas.data) && globalDeltas.data.length > 0) {
     const deltas = [...globalDeltas.data].slice().reverse()
@@ -393,29 +393,16 @@ function Dashboard() {
     const baseOi = deltas[0].d_oi_6h || 1
     const baseWide = deltas[0].d_wide_6h || 1
 
-    const series = deltas.map((row) => {
+    const values = deltas.map((row) => {
       const relVol = row.d_volume_6h / baseVol
       const relOi = row.d_oi_6h / baseOi
       const relWide = row.d_wide_6h / baseWide
-      const index = (100 * (relVol + relOi + relWide)) / 3
-      return { ts: row.snap_ts, index }
+      return (100 * (relVol + relOi + relWide)) / 3
     })
+    const times = deltas.map((row) => row.snap_ts)
 
-    const values = series.map((s) => s.index)
-    const min = Math.min(...values)
-    const max = Math.max(...values)
-    const span = max - min || 1
-
-    vixPoints = series
-      .map((s, i) => {
-        const x = series.length === 1 ? 0 : (i / (series.length - 1)) * 100
-        const norm = (s.index - min) / span
-        const y = 35 - norm * 25
-        return `${x},${y}`
-      })
-      .join(' ')
-
-    latestIndex = series[series.length - 1].index
+    shiftChartSeries = [{ label: 'Market Shift Index', values, times, color: '#6366f1' }]
+    latestIndex = values[values.length - 1]
   }
 
   return (
@@ -453,31 +440,24 @@ function Dashboard() {
           <div className="panel-title">Market Shift Index (6h)</div>
         </div>
         <div className="panel-body">
-          {globalDeltas.loading && (
-            <div className="loading">Loading index…</div>
-          )}
-          {globalDeltas.error && (
-            <div className="error">{globalDeltas.error.message}</div>
-          )}
-          {vixPoints && (
-            <div className="vix-chart-wrapper">
-              <svg
-                className="vix-chart"
-                viewBox="0 0 100 40"
-                preserveAspectRatio="none"
-              >
-                <polyline
-                  className="vix-chart-path"
-                  points={vixPoints}
-                />
-              </svg>
-            </div>
-          )}
           {latestIndex !== null && (
             <div className="vix-chart-label">
               Current index: <strong>{latestIndex.toFixed(1)}</strong>
             </div>
           )}
+          <ModernLineChart
+            series={shiftChartSeries}
+            loading={globalDeltas.loading}
+            error={globalDeltas.error}
+            showAxes={true}
+            yAxisFormatter={(v) => (typeof v === 'number' && !isNaN(v) ? v.toFixed(1) : '')}
+            xAxisFormatter={(t) => {
+              if (!t) return '';
+              const d = new Date(t);
+              if (isNaN(d.getTime())) return t;
+              return d.toLocaleString('en-US', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+            }}
+          />
           <p className="panel-methodology">
             This index combines 2-hour changes in trading volume, open
             interest, and market breadth into a single normalized score.
@@ -1192,23 +1172,17 @@ function PolyDashboard() {
   const midMoves         = usePolyApi('/markets/mid-moves', { hours: 24, limit: 15 })
   const volIndex         = usePolyApi('/vol/index/global', { points: 50 })
 
-  // Build vol-index sparkline
-  let volIndexPoints = ''
+  // Build vol-index series for ModernLineChart
   let latestVolIndex = null
-  if (Array.isArray(volIndex.data) && volIndex.data.length > 0) {
-    const series = [...volIndex.data]
-    const values = series.map((s) => s.vol_index ?? 0)
-    const min = Math.min(...values)
-    const max = Math.max(...values)
-    const span = max - min || 1
-    volIndexPoints = series
-      .map((s, i) => {
-        const x = series.length === 1 ? 0 : (i / (series.length - 1)) * 100
-        const norm = ((s.vol_index ?? 0) - min) / span
-        const y = 35 - norm * 25
-        return `${x},${y}`
-      })
-      .join(' ')
+  let volChartSeries = null
+  const volSeries = Array.isArray(volIndex.data?.series) ? volIndex.data.series
+                  : Array.isArray(volIndex.data) ? volIndex.data
+                  : []
+  if (volSeries.length > 0) {
+    const rows = [...volSeries].reverse()
+    const values = rows.map((s) => s.vol_index ?? 0)
+    const times = rows.map((s) => s.snap_ts ?? '')
+    volChartSeries = [{ label: 'Realized Vol Index', values, times, color: '#a855f7' }]
     latestVolIndex = values[values.length - 1]
   }
 
@@ -1255,19 +1229,25 @@ function PolyDashboard() {
         <div className="panel-body">
           {volIndex.loading && <div className="loading">Loading vol index…</div>}
           {volIndex.error   && <div className="error">{volIndex.error.message}</div>}
-          {volIndexPoints && (
-            <div className="vix-chart-wrapper">
-              <svg className="vix-chart" viewBox="0 0 100 40" preserveAspectRatio="none">
-                <polyline className="vix-chart-path" points={volIndexPoints} />
-              </svg>
-            </div>
-          )}
           {latestVolIndex !== null && (
             <div className="vix-chart-label">
               Current index: <strong>{fmtDec(latestVolIndex, 4)}</strong>
             </div>
           )}
-          {Array.isArray(volIndex.data) && volIndex.data.length === 0 &&
+          <ModernLineChart
+            series={volChartSeries}
+            loading={volIndex.loading}
+            error={volIndex.error}
+            showAxes={true}
+            yAxisFormatter={(v) => (typeof v === 'number' && !isNaN(v) ? v.toFixed(0) : '')}
+            xAxisFormatter={(t) => {
+              if (!t) return '';
+              const d = new Date(t);
+              if (isNaN(d.getTime())) return t;
+              return d.toLocaleString('en-US', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+            }}
+          />
+          {volIndex.data && volSeries.length === 0 &&
             !volIndex.loading && !volIndex.error && (
             <span className="muted">
               No vol-index data yet — enable ENABLE_MARKET_SNAPSHOT=1 on the
