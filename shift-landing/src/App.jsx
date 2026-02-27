@@ -405,8 +405,27 @@ function Dashboard() {
     latestIndex = values[values.length - 1]
   }
 
+  const fmtNum = (v) => (typeof v === 'number' ? v.toLocaleString('en-US') : v)
+  const fmtDec = (v, d = 1) => (typeof v === 'number' ? v.toFixed(d) : v)
+
+  // compute time-until-expiry helper
+  const timeUntilK = (dateStr) => {
+    if (!dateStr) return ''
+    const diff = new Date(dateStr) - new Date()
+    if (diff <= 0) return 'Expired'
+    const hrs = Math.floor(diff / 3600000)
+    const mins = Math.floor((diff % 3600000) / 60000)
+    if (hrs >= 24) return `${Math.floor(hrs / 24)}d ${hrs % 24}h`
+    return `${hrs}h ${mins}m`
+  }
+
+  // latest delta for hero stats
+  const latestDelta = Array.isArray(globalDeltas.data) && globalDeltas.data.length > 0
+    ? globalDeltas.data[0]
+    : null
+
   return (
-    <div className="dashboard">
+    <div className="dashboard kalshi-dash">
       <p className="seo-blurb">
         Market Shift Index 2-hour deltas, real-time market movers, top events by traded volume, spread blowouts, expiring contracts, and global order-flow metrics across prediction markets.
       </p>
@@ -433,18 +452,101 @@ function Dashboard() {
         ))}
       </nav>
 
+      {/* ═══ HERO STATS BAR ═══ */}
+      {latestDelta && (
+        <div className="poly-stats-bar" style={{ marginTop: '1.5rem' }}>
+          <div className="poly-stat-card">
+            <div className="poly-stat-label">Δ Volume (6h)</div>
+            <div className="poly-stat-value">
+              {typeof latestDelta.d_volume_6h === 'number'
+                ? latestDelta.d_volume_6h.toLocaleString('en-US')
+                : latestDelta.d_volume_6h}
+            </div>
+            <div className={`poly-stat-delta ${(latestDelta.d_volume_6h ?? 0) >= 0 ? 'up' : 'down'}`}>
+              {(latestDelta.d_volume_6h ?? 0) >= 0 ? '▲' : '▼'} contracts
+            </div>
+          </div>
+          <div className="poly-stat-card">
+            <div className="poly-stat-label">Δ Open Interest (6h)</div>
+            <div className="poly-stat-value">
+              {typeof latestDelta.d_oi_6h === 'number'
+                ? latestDelta.d_oi_6h.toLocaleString('en-US')
+                : latestDelta.d_oi_6h}
+            </div>
+            <div className={`poly-stat-delta ${(latestDelta.d_oi_6h ?? 0) >= 0 ? 'up' : 'down'}`}>
+              {(latestDelta.d_oi_6h ?? 0) >= 0 ? '▲' : '▼'} positions
+            </div>
+          </div>
+          <div className="poly-stat-card">
+            <div className="poly-stat-label">Δ Wide Spreads (6h)</div>
+            <div className="poly-stat-value">
+              {typeof latestDelta.d_wide_6h === 'number'
+                ? latestDelta.d_wide_6h.toLocaleString('en-US')
+                : latestDelta.d_wide_6h}
+            </div>
+            <div className={`poly-stat-delta ${(latestDelta.d_wide_6h ?? 0) >= 0 ? 'up' : 'down'}`}>
+              {(latestDelta.d_wide_6h ?? 0) >= 0 ? '▲' : '▼'} markets
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ MARKET MOVERS — Pulse Cards ═══ */}
+      {Array.isArray(marketMovers.data) && marketMovers.data.length > 0 && (
+        <div className="poly-pulse-section">
+          <h3 className="poly-section-title">
+            <span className="poly-pulse-dot" /> Market Movers — Biggest Price Shifts
+          </h3>
+          <div className="poly-pulse-grid">
+            {marketMovers.data.slice(0, 6).map((row, idx) => {
+              const diff = typeof row.price_diff === 'number' ? row.price_diff : 0
+              const isUp = diff >= 0
+              const absDiff = Math.abs(diff)
+              const barWidth = Math.min(100, (absDiff / 20) * 100)
+              return (
+                <div key={row.market_ticker ?? idx} className={`poly-pulse-card ${isUp ? 'pulse-up' : 'pulse-down'}`}>
+                  <div className="pulse-rank">#{idx + 1}</div>
+                  <div className="pulse-question">{row.market_ticker}</div>
+                  <div className="pulse-prices">
+                    <span className="pulse-old">{fmtDec(row.old_price)}</span>
+                    <span className="pulse-arrow">→</span>
+                    <span className="pulse-new">{fmtDec(row.new_price)}</span>
+                  </div>
+                  <div className="pulse-bar-track">
+                    <div
+                      className={`pulse-bar-fill ${isUp ? 'fill-up' : 'fill-down'}`}
+                      style={{ width: `${barWidth}%` }}
+                    />
+                  </div>
+                  <div className={`pulse-diff ${isUp ? 'diff-up' : 'diff-down'}`}>
+                    {isUp ? '+' : ''}{fmtDec(diff)} ¢
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+      {marketMovers.loading && (
+        <div className="panel" style={{ marginTop: '1rem' }}>
+          <div className="panel-body"><div className="loading">Loading market movers…</div></div>
+        </div>
+      )}
+
       <Last24hChangesPanel defaultProvider="kalshi" />
 
-      <div className="panel" style={{ marginTop: '1.5rem' }}>
-        <div className="panel-header">
-          <div className="panel-title">Market Shift Index (6h)</div>
-        </div>
-        <div className="panel-body">
+      {/* ═══ MARKET SHIFT INDEX ═══ */}
+      <div className="panel poly-vol-panel" style={{ marginTop: '1.5rem' }}>
+        <div className="panel-header" style={{ borderBottom: 'none', paddingBottom: 0 }}>
+          <div className="panel-title">Market Shift Index</div>
           {latestIndex !== null && (
-            <div className="vix-chart-label">
-              Current index: <strong>{latestIndex.toFixed(1)}</strong>
+            <div className="poly-vol-badge">
+              <span className="poly-vol-badge-value">{latestIndex.toFixed(1)}</span>
+              <span className="poly-vol-badge-unit">composite</span>
             </div>
           )}
+        </div>
+        <div className="panel-body">
           <ModernLineChart
             series={shiftChartSeries}
             loading={globalDeltas.loading}
@@ -468,311 +570,141 @@ function Dashboard() {
         </div>
       </div>
 
-      <div className="panel" style={{ marginTop: '1rem' }}>
-        <div className="panel-header">
-          <div className="panel-title">Market Movers</div>
-        </div>
-        <div className="panel-body">
-          {marketMovers.loading && (
-            <div className="loading">Loading market movers…</div>
-          )}
-          {marketMovers.error && (
-            <div className="error">{marketMovers.error.message}</div>
-          )}
-          {Array.isArray(marketMovers.data) &&
-            marketMovers.data.length > 0 && (
-              <div className="markets-table-scroll">
-                <table className="markets-table">
-                  <thead>
-                    <tr>
-                      <th>Market Ticker</th>
-                      <th>Old Price</th>
-                      <th>New Price</th>
-                      <th>Δ Price</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {marketMovers.data.slice(0, 15).map((row, idx) => (
-                      <tr key={row.market_ticker ?? idx}>
-                        <td>{row.market_ticker}</td>
-                        <td>
-                          {typeof row.old_price === 'number'
-                            ? row.old_price.toFixed(1)
-                            : row.old_price}
-                        </td>
-                        <td>
-                          {typeof row.new_price === 'number'
-                            ? row.new_price.toFixed(1)
-                            : row.new_price}
-                        </td>
-                        <td>
-                          {typeof row.price_diff === 'number'
-                            ? row.price_diff.toFixed(1)
-                            : row.price_diff}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          {Array.isArray(marketMovers.data) &&
-            marketMovers.data.length === 0 &&
-            !marketMovers.loading &&
-            !marketMovers.error && (
-              <span className="muted">No major market movers.</span>
-            )}
-        </div>
-      </div>
-
-      <div className="panel" style={{ marginTop: '1rem' }}>
-        <div className="panel-header">
-          <div className="panel-title">Top Events by Volume</div>
-        </div>
-        <div className="panel-body">
-          {eventsByVolume.loading && (
-            <div className="loading">Loading events…</div>
-          )}
-          {eventsByVolume.error && (
-            <div className="error">{eventsByVolume.error.message}</div>
-          )}
-          {Array.isArray(eventsByVolume.data) &&
-            eventsByVolume.data.length > 0 && (
-              <div className="markets-table-scroll">
-                <table className="markets-table">
-                  <thead>
-                    <tr>
-                      <th>Event</th>
-                      <th>Markets</th>
-                      <th>Total Volume</th>
-                      <th>Avg Spread</th>
-                      <th>Order Flow Imbalance Link</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {eventsByVolume.data.slice(0, 15).map((row) => (
-                      <tr key={row.event_ticker}>
-                        <td>{row.event_ticker}</td>
-                        <td>{row.n_markets}</td>
-                        <td>
-                          {typeof row.total_volume === 'number'
-                            ? row.total_volume.toLocaleString('en-US')
-                            : row.total_volume}
-                        </td>
-                        <td>
-                          {typeof row.avg_spread_ticks === 'number'
-                            ? row.avg_spread_ticks.toFixed(2)
-                            : row.avg_spread_ticks}
-                        </td>
-                        <td>
-                          <span className="tradability-blur">{row.event_ticker}</span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-        </div>
-      </div>
-
-      <div className="panel" style={{ marginTop: '1rem' }}>
-        <div className="panel-header">
-          <div className="panel-title">Spread Blowouts</div>
-        </div>
-        <div className="panel-body">
-          {spreadBlowouts.loading && (
-            <div className="loading">Loading spread blowouts…</div>
-          )}
-          {spreadBlowouts.error && (
-            <div className="error">{spreadBlowouts.error.message}</div>
-          )}
-          {Array.isArray(spreadBlowouts.data) &&
-            spreadBlowouts.data.length > 0 && (
-              <div className="markets-table-scroll">
-                <table className="markets-table">
-                  <thead>
-                    <tr>
-                      <th>Market Ticker</th>
-                      <th>Event Ticker</th>
-                      <th>Spread Now</th>
-                      <th>Spread Prev</th>
-                      <th>Δ Spread</th>
-                      <th>Mid Now</th>
-                      <th>Mid Prev</th>
-                      <th>Δ Mid</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {spreadBlowouts.data.slice(0, 10).map((row, idx) => (
-                      <tr key={row.market_ticker ?? idx}>
-                        <td>{row.market_ticker}</td>
-                        <td>{row.event_ticker}</td>
-                        <td>
-                          {typeof row.spread_now === 'number'
-                            ? row.spread_now.toFixed(1)
-                            : row.spread_now}
-                        </td>
-                        <td>
-                          {typeof row.spread_prev === 'number'
-                            ? row.spread_prev.toFixed(1)
-                            : row.spread_prev}
-                        </td>
-                        <td>
-                          {typeof row.d_spread === 'number'
-                            ? row.d_spread.toFixed(1)
-                            : row.d_spread}
-                        </td>
-                        <td>
-                          {typeof row.mid_now === 'number'
-                            ? row.mid_now.toFixed(1)
-                            : row.mid_now}
-                        </td>
-                        <td>
-                          {typeof row.mid_prev === 'number'
-                            ? row.mid_prev.toFixed(1)
-                            : row.mid_prev}
-                        </td>
-                        <td>
-                          {typeof row.d_mid === 'number'
-                            ? row.d_mid.toFixed(1)
-                            : row.d_mid}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          {Array.isArray(spreadBlowouts.data) &&
-            spreadBlowouts.data.length === 0 &&
-            !spreadBlowouts.loading &&
-            !spreadBlowouts.error && (
-              <span className="muted">No spread blowouts detected.</span>
-            )}
-        </div>
-      </div>
-
-        <div className="panel" style={{ marginTop: '1rem' }}>
+      {/* ═══ TOP EVENTS + SPREAD BLOWOUTS — side by side ═══ */}
+      <div className="poly-events-duo">
+        {/* Top Events by Volume */}
+        <div className="panel poly-events-panel">
           <div className="panel-header">
-            <div className="panel-title">Markets Expiring Soon</div>
+            <div className="panel-title">Top Events by Volume</div>
           </div>
           <div className="panel-body">
-            {expiringSoon.loading && (
-              <div className="loading">Loading expiring markets…</div>
+            {eventsByVolume.loading && <div className="loading">Loading…</div>}
+            {eventsByVolume.error && <div className="error">{eventsByVolume.error.message}</div>}
+            {Array.isArray(eventsByVolume.data) && eventsByVolume.data.length > 0 && (
+              <div className="poly-event-list">
+                {eventsByVolume.data.slice(0, 8).map((row, idx) => (
+                  <div key={row.event_ticker ?? idx} className="poly-event-row">
+                    <span className="poly-event-rank">{idx + 1}</span>
+                    <div className="poly-event-info">
+                      <div className="poly-event-name">{row.event_ticker}</div>
+                      <div className="poly-event-meta">
+                        {fmtNum(row.n_markets)} markets · spread {fmtDec(row.avg_spread_ticks, 2)}
+                      </div>
+                    </div>
+                    <div className="poly-event-stat">{fmtNum(row.total_volume)}</div>
+                  </div>
+                ))}
+              </div>
             )}
-            {expiringSoon.error && (
-              <div className="error">{expiringSoon.error.message}</div>
-            )}
-            {Array.isArray(expiringSoon.data) &&
-              expiringSoon.data.length > 0 && (
-                <div className="markets-table-scroll">
-                  <table className="markets-table">
-                    <thead>
-                      <tr>
-                        <th>Market Ticker</th>
-                        <th>Event Ticker</th>
-                        <th>Expiration Time</th>
-                        <th>Open Interest</th>
-                        <th>Volume</th>
-                        <th>Spread (ticks)</th>
-                        <th>Mid</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {expiringSoon.data.slice(0, 10).map((row, idx) => (
-                        <tr key={row.market_ticker ?? idx}>
-                          <td>{row.market_ticker}</td>
-                          <td>{row.event_ticker}</td>
-                          <td>{row.expiration_time}</td>
-                          <td>
-                            {typeof row.open_interest === 'number'
-                              ? row.open_interest.toLocaleString('en-US')
-                              : row.open_interest}
-                          </td>
-                          <td>
-                            {typeof row.volume === 'number'
-                              ? row.volume.toLocaleString('en-US')
-                              : row.volume}
-                          </td>
-                          <td>
-                            {typeof row.spread_ticks === 'number'
-                              ? row.spread_ticks.toFixed(1)
-                              : row.spread_ticks}
-                          </td>
-                          <td>
-                            {typeof row.mid === 'number'
-                              ? row.mid.toFixed(1)
-                              : row.mid}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            {Array.isArray(expiringSoon.data) &&
-              expiringSoon.data.length === 0 &&
-              !expiringSoon.loading &&
-              !expiringSoon.error && (
-                <span className="muted">No expiring markets found.</span>
-              )}
           </div>
         </div>
 
-      <div className="panel" style={{ marginTop: '1rem', marginBottom: '1.5rem' }}>
+        {/* Spread Blowouts */}
+        <div className="panel poly-events-panel">
+          <div className="panel-header">
+            <div className="panel-title">Spread Blowouts</div>
+          </div>
+          <div className="panel-body">
+            {spreadBlowouts.loading && <div className="loading">Loading…</div>}
+            {spreadBlowouts.error && <div className="error">{spreadBlowouts.error.message}</div>}
+            {Array.isArray(spreadBlowouts.data) && spreadBlowouts.data.length > 0 && (
+              <div className="kalshi-blowout-list">
+                {spreadBlowouts.data.slice(0, 8).map((row, idx) => {
+                  const dSpread = typeof row.d_spread === 'number' ? row.d_spread : 0
+                  const isWider = dSpread > 0
+                  return (
+                    <div key={row.market_ticker ?? idx} className={`kalshi-blowout-row ${isWider ? 'blowout-wider' : 'blowout-tighter'}`}>
+                      <div className="blowout-ticker">
+                        <div className="blowout-market">{row.market_ticker}</div>
+                        <div className="blowout-event">{row.event_ticker}</div>
+                      </div>
+                      <div className="blowout-spread-change">
+                        <span className="blowout-prev">{fmtDec(row.spread_prev)}</span>
+                        <span className="pulse-arrow">→</span>
+                        <span className="blowout-now">{fmtDec(row.spread_now)}</span>
+                        <span className={`blowout-delta ${isWider ? 'diff-up' : 'diff-down'}`}>
+                          {isWider ? '+' : ''}{fmtDec(dSpread)}
+                        </span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+            {Array.isArray(spreadBlowouts.data) && spreadBlowouts.data.length === 0 &&
+              !spreadBlowouts.loading && !spreadBlowouts.error && (
+              <span className="muted">No spread blowouts detected.</span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ═══ EXPIRING SOON — countdown cards ═══ */}
+      {Array.isArray(expiringSoon.data) && expiringSoon.data.length > 0 && (
+        <div className="poly-expiring-section">
+          <h3 className="poly-section-title">⏱ Expiring Soon</h3>
+          <div className="poly-expiring-grid">
+            {expiringSoon.data.slice(0, 8).map((row, idx) => {
+              const remaining = timeUntilK(row.expiration_time)
+              const midPrice = typeof row.mid === 'number' ? row.mid : null
+              const isUrgent = remaining.includes('h') && !remaining.includes('d')
+              return (
+                <div key={row.market_ticker ?? idx} className={`poly-expiring-card${isUrgent ? ' expiring-urgent' : ''}`}>
+                  <div className="expiring-countdown">{remaining}</div>
+                  <div className="expiring-question">{row.market_ticker}</div>
+                  <div className="expiring-footer">
+                    {midPrice !== null && (
+                      <div className="expiring-price-bar">
+                        <div className="expiring-yes-fill" style={{ width: `${Math.min(midPrice, 99)}%` }} />
+                        <span className="expiring-yes-label">MID {fmtDec(midPrice)}¢</span>
+                      </div>
+                    )}
+                    <div className="expiring-meta">
+                      OI: {fmtNum(row.open_interest)} · Vol: {fmtNum(row.volume)} · Spread: {fmtDec(row.spread_ticks)}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+      {expiringSoon.loading && (
+        <div className="panel" style={{ marginTop: '1rem' }}>
+          <div className="panel-body"><div className="loading">Loading expiring markets…</div></div>
+        </div>
+      )}
+
+      {/* ═══ GLOBAL 6H DELTAS TABLE ═══ */}
+      <div className="panel" style={{ marginTop: '1.5rem', marginBottom: '1.5rem' }}>
         <div className="panel-header">
-          <div className="panel-title">Global 6h Deltas (Raw)</div>
+          <div className="panel-title">Global 6h Deltas (run-over-run)</div>
         </div>
         <div className="panel-body">
-          {globalDeltas.loading && (
-            <div className="loading">Loading global deltas…</div>
-          )}
-          {globalDeltas.error && (
-            <div className="error">{globalDeltas.error.message}</div>
-          )}
+          {globalDeltas.loading && <div className="loading">Loading deltas…</div>}
+          {globalDeltas.error && <div className="error">{globalDeltas.error.message}</div>}
           {Array.isArray(globalDeltas.data) && globalDeltas.data.length > 0 && (
             <div className="markets-table-scroll">
               <table className="markets-table">
                 <thead>
                   <tr>
                     <th>Snapshot</th>
-                    <th>Δ Volume 6h</th>
-                    <th>Δ OI 6h</th>
-                    <th>Δ Priced 6h</th>
-                    <th>Δ Spread 6h</th>
-                    <th>Δ Wide 6h</th>
+                    <th>Δ Volume</th>
+                    <th>Δ OI</th>
+                    <th>Δ Priced</th>
+                    <th>Δ Spread</th>
+                    <th>Δ Wide</th>
                   </tr>
                 </thead>
                 <tbody>
                   {globalDeltas.data.slice(0, 10).map((row, idx) => (
                     <tr key={row.snap_ts ?? idx}>
                       <td>{row.snap_ts}</td>
-                      <td>
-                        {typeof row.d_volume_6h === 'number'
-                          ? row.d_volume_6h.toLocaleString('en-US')
-                          : row.d_volume_6h}
-                      </td>
-                      <td>
-                        {typeof row.d_oi_6h === 'number'
-                          ? row.d_oi_6h.toLocaleString('en-US')
-                          : row.d_oi_6h}
-                      </td>
-                      <td>
-                        {typeof row.d_priced_6h === 'number'
-                          ? row.d_priced_6h.toLocaleString('en-US')
-                          : row.d_priced_6h}
-                      </td>
-                      <td>
-                        {typeof row.d_spread_6h === 'number'
-                          ? row.d_spread_6h.toFixed(3)
-                          : row.d_spread_6h}
-                      </td>
-                      <td>
-                        {typeof row.d_wide_6h === 'number'
-                          ? row.d_wide_6h.toLocaleString('en-US')
-                          : row.d_wide_6h}
-                      </td>
+                      <td>{fmtNum(row.d_volume_6h)}</td>
+                      <td>{fmtNum(row.d_oi_6h)}</td>
+                      <td>{fmtNum(row.d_priced_6h)}</td>
+                      <td>{typeof row.d_spread_6h === 'number' ? row.d_spread_6h.toFixed(3) : row.d_spread_6h}</td>
+                      <td>{fmtNum(row.d_wide_6h)}</td>
                     </tr>
                   ))}
                 </tbody>

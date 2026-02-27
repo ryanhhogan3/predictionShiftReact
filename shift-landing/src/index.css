@@ -1575,6 +1575,92 @@ h1 {
   }
 }
 
+/* ── Kalshi Dashboard ── */
+.kalshi-dash {
+  max-width: 1200px;
+}
+
+/* ── Spread Blowout List ── */
+.kalshi-blowout-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.kalshi-blowout-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.7rem 0;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  transition: background 0.15s ease;
+}
+
+.kalshi-blowout-row:last-child {
+  border-bottom: none;
+}
+
+.kalshi-blowout-row:hover {
+  background: rgba(255,255,255,0.02);
+}
+
+.kalshi-blowout-row.blowout-wider {
+  border-left: 3px solid rgba(248,113,113,0.4);
+  padding-left: 0.65rem;
+}
+
+.kalshi-blowout-row.blowout-tighter {
+  border-left: 3px solid rgba(52,211,153,0.4);
+  padding-left: 0.65rem;
+}
+
+.blowout-ticker {
+  flex: 1;
+  min-width: 0;
+}
+
+.blowout-market {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: rgba(255,255,255,0.88);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.blowout-event {
+  font-size: 0.65rem;
+  color: rgba(255,255,255,0.3);
+  margin-top: 0.1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.blowout-spread-change {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+  font-size: 0.8rem;
+}
+
+.blowout-prev {
+  color: rgba(255,255,255,0.4);
+}
+
+.blowout-now {
+  color: rgba(255,255,255,0.85);
+  font-weight: 600;
+}
+
+.blowout-delta {
+  font-weight: 700;
+  font-size: 0.78rem;
+  margin-left: 0.25rem;
+}
+
 @media (max-width: 600px) {
   .poly-stat-value {
     font-size: 1.4rem;
