@@ -503,10 +503,20 @@ function Dashboard() {
               const isUp = diff >= 0
               const absDiff = Math.abs(diff)
               const barWidth = Math.min(100, (absDiff / 20) * 100)
+              // derive readable name from ticker: strip KX prefix, split on hyphens, titlecase first segment
+              const tickerName = (row.market_ticker || '')
+                .replace(/^KX/i, '')
+                .split('-')[0]
+                .replace(/([a-z])([A-Z])/g, '$1 $2')
+                .replace(/([A-Z]+)/g, ' $1')
+                .trim()
               return (
                 <div key={row.market_ticker ?? idx} className={`poly-pulse-card ${isUp ? 'pulse-up' : 'pulse-down'}`}>
                   <div className="pulse-rank">#{idx + 1}</div>
-                  <div className="pulse-question">{row.market_ticker}</div>
+                  <div className="pulse-question">
+                    <strong>{tickerName}</strong>
+                    <span className="pulse-ticker-id">{row.market_ticker}</span>
+                  </div>
                   <div className="pulse-prices">
                     <span className="pulse-old">{fmtDec(row.old_price)}</span>
                     <span className="pulse-arrow">→</span>
