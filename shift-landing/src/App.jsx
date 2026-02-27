@@ -1189,9 +1189,32 @@ function PolyDashboard() {
   const fmtPct = (v) => (typeof v === 'number' ? `${(v * 100).toFixed(1)}%` : v)
   const fmtNum = (v) => (typeof v === 'number' ? v.toLocaleString('en-US') : v)
   const fmtDec = (v, d = 2) => (typeof v === 'number' ? v.toFixed(d) : v)
+  const fmtUsd = (v) => {
+    if (typeof v !== 'number') return v
+    if (v >= 1_000_000_000) return `$${(v / 1_000_000_000).toFixed(2)}B`
+    if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`
+    if (v >= 1_000) return `$${(v / 1_000).toFixed(1)}K`
+    return `$${v.toLocaleString('en-US')}`
+  }
+
+  // compute time-until-expiry helper
+  const timeUntil = (dateStr) => {
+    if (!dateStr) return ''
+    const diff = new Date(dateStr) - new Date()
+    if (diff <= 0) return 'Expired'
+    const hrs = Math.floor(diff / 3600000)
+    const mins = Math.floor((diff % 3600000) / 60000)
+    if (hrs >= 24) return `${Math.floor(hrs / 24)}d ${hrs % 24}h`
+    return `${hrs}h ${mins}m`
+  }
+
+  // find latest delta for snapshot comparison
+  const latestDelta = Array.isArray(globalDeltas.data) && globalDeltas.data.length > 0
+    ? globalDeltas.data[0]
+    : null
 
   return (
-    <div className="dashboard">
+    <div className="dashboard poly-dash">
       <p className="seo-blurb">
         Polymarket real-time analytics: vol index, market mid-moves, top events
         by volume and liquidity, expiring markets, and global USDC flow metrics.
@@ -1219,21 +1242,99 @@ function PolyDashboard() {
         ))}
       </nav>
 
+      {/* ═══ HERO STATS BAR ═══ */}
+      <div className="poly-stats-bar">
+        {globalSnapshot.loading && <div className="loading">Loading stats…</div>}
+        {globalSnapshot.data && !globalSnapshot.loading && (
+          <>
+            <div className="poly-stat-card">
+              <div className="poly-stat-label">Total Volume</div>
+              <div className="poly-stat-value">{fmtUsd(globalSnapshot.data.total_volume)}</div>
+              {latestDelta && typeof latestDelta.d_volume === 'number' && (
+                <div className={`poly-stat-delta ${latestDelta.d_volume >= 0 ? 'up' : 'down'}`}>
+                  {latestDelta.d_volume >= 0 ? '▲' : '▼'} {fmtUsd(Math.abs(latestDelta.d_volume))}
+                </div>
+              )}
+            </div>
+            <div className="poly-stat-card">
+              <div className="poly-stat-label">Total Liquidity</div>
+              <div className="poly-stat-value">{fmtUsd(globalSnapshot.data.total_liquidity)}</div>
+              {latestDelta && typeof latestDelta.d_liquidity === 'number' && (
+                <div className={`poly-stat-delta ${latestDelta.d_liquidity >= 0 ? 'up' : 'down'}`}>
+                  {latestDelta.d_liquidity >= 0 ? '▲' : '▼'} {fmtUsd(Math.abs(latestDelta.d_liquidity))}
+                </div>
+              )}
+            </div>
+            <div className="poly-stat-card">
+              <div className="poly-stat-label">Active Markets</div>
+              <div className="poly-stat-value">{fmtNum(globalSnapshot.data.active_markets)}</div>
+              {latestDelta && typeof latestDelta.d_markets === 'number' && (
+                <div className={`poly-stat-delta ${latestDelta.d_markets >= 0 ? 'up' : 'down'}`}>
+                  {latestDelta.d_markets >= 0 ? '+' : ''}{latestDelta.d_markets}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* ═══ MARKET PULSE — biggest mid-moves ═══ */}
+      {Array.isArray(midMoves.data) && midMoves.data.length > 0 && (
+        <div className="poly-pulse-section">
+          <h3 className="poly-section-title">
+            <span className="poly-pulse-dot" /> Market Pulse — Biggest Moves (24h)
+          </h3>
+          <div className="poly-pulse-grid">
+            {midMoves.data.slice(0, 6).map((row, idx) => {
+              const diff = typeof row.price_diff === 'number' ? row.price_diff : 0
+              const isUp = diff >= 0
+              const absDiff = Math.abs(diff * 100)
+              // bar width: map 0-50pp → 0-100% width
+              const barWidth = Math.min(100, (absDiff / 30) * 100)
+              return (
+                <div key={row.condition_id ?? idx} className={`poly-pulse-card ${isUp ? 'pulse-up' : 'pulse-down'}`}>
+                  <div className="pulse-rank">#{idx + 1}</div>
+                  <div className="pulse-question">{row.question ?? row.title}</div>
+                  <div className="pulse-prices">
+                    <span className="pulse-old">{fmtPct(row.old_price)}</span>
+                    <span className="pulse-arrow">{isUp ? '→' : '→'}</span>
+                    <span className="pulse-new">{fmtPct(row.new_price)}</span>
+                  </div>
+                  <div className="pulse-bar-track">
+                    <div
+                      className={`pulse-bar-fill ${isUp ? 'fill-up' : 'fill-down'}`}
+                      style={{ width: `${barWidth}%` }}
+                    />
+                  </div>
+                  <div className={`pulse-diff ${isUp ? 'diff-up' : 'diff-down'}`}>
+                    {isUp ? '+' : ''}{(diff * 100).toFixed(1)}pp
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+      {midMoves.loading && (
+        <div className="panel" style={{ marginTop: '1rem' }}>
+          <div className="panel-body"><div className="loading">Loading market pulse…</div></div>
+        </div>
+      )}
+
       <Last24hChangesPanel defaultProvider="poly" />
 
-      {/* ── Vol Index ── */}
-      <div className="panel" style={{ marginTop: '1.5rem' }}>
-        <div className="panel-header">
-          <div className="panel-title">Realized Vol Index (log-odds, annualized)</div>
-        </div>
-        <div className="panel-body">
-          {volIndex.loading && <div className="loading">Loading vol index…</div>}
-          {volIndex.error   && <div className="error">{volIndex.error.message}</div>}
+      {/* ═══ VOLATILITY INDEX ═══ */}
+      <div className="panel poly-vol-panel" style={{ marginTop: '1.5rem' }}>
+        <div className="panel-header" style={{ borderBottom: 'none', paddingBottom: 0 }}>
+          <div className="panel-title">Realized Vol Index</div>
           {latestVolIndex !== null && (
-            <div className="vix-chart-label">
-              Current index: <strong>{fmtDec(latestVolIndex, 4)}</strong>
+            <div className="poly-vol-badge">
+              <span className="poly-vol-badge-value">{fmtDec(latestVolIndex, 1)}</span>
+              <span className="poly-vol-badge-unit">annualized</span>
             </div>
           )}
+        </div>
+        <div className="panel-body">
           <ModernLineChart
             series={volChartSeries}
             loading={volIndex.loading}
@@ -1249,10 +1350,7 @@ function PolyDashboard() {
           />
           {volIndex.data && volSeries.length === 0 &&
             !volIndex.loading && !volIndex.error && (
-            <span className="muted">
-              No vol-index data yet — enable ENABLE_MARKET_SNAPSHOT=1 on the
-              exporter.
-            </span>
+            <span className="muted">No vol-index data available yet.</span>
           )}
           <p className="panel-methodology">
             Liquidity-weighted annualized realized volatility computed from
@@ -1262,39 +1360,99 @@ function PolyDashboard() {
         </div>
       </div>
 
-      {/* ── Global Snapshot ── */}
-      <div className="panel" style={{ marginTop: '1rem' }}>
-        <div className="panel-header">
-          <div className="panel-title">Global Snapshot</div>
+      {/* ═══ TOP EVENTS — side by side ═══ */}
+      <div className="poly-events-duo">
+        <div className="panel poly-events-panel">
+          <div className="panel-header">
+            <div className="panel-title">Top Events by Volume</div>
+          </div>
+          <div className="panel-body">
+            {topEventsVolume.loading && <div className="loading">Loading…</div>}
+            {topEventsVolume.error && <div className="error">{topEventsVolume.error.message}</div>}
+            {Array.isArray(topEventsVolume.data) && topEventsVolume.data.length > 0 && (
+              <div className="poly-event-list">
+                {topEventsVolume.data.slice(0, 8).map((row, idx) => (
+                  <div key={row.event_slug ?? idx} className="poly-event-row">
+                    <span className="poly-event-rank">{idx + 1}</span>
+                    <div className="poly-event-info">
+                      <div className="poly-event-name">{row.event_title ?? row.event_slug ?? row.title}</div>
+                      <div className="poly-event-meta">
+                        {fmtNum(row.n_markets)} markets · {fmtUsd(row.total_volume)} vol
+                      </div>
+                    </div>
+                    <div className="poly-event-stat">{fmtUsd(row.total_liquidity)}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
-        <div className="panel-body">
-          {globalSnapshot.loading && <div className="loading">Loading snapshot…</div>}
-          {globalSnapshot.error   && <div className="error">{globalSnapshot.error.message}</div>}
-          {globalSnapshot.data && !globalSnapshot.loading && (
-            <div className="markets-table-scroll">
-              <table className="markets-table">
-                <thead>
-                  <tr>
-                    <th>Total Volume (USDC)</th>
-                    <th>Total Liquidity (USDC)</th>
-                    <th>Active Markets</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>{fmtNum(globalSnapshot.data.total_volume)}</td>
-                    <td>{fmtNum(globalSnapshot.data.total_liquidity)}</td>
-                    <td>{fmtNum(globalSnapshot.data.active_markets)}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          )}
+
+        <div className="panel poly-events-panel">
+          <div className="panel-header">
+            <div className="panel-title">Top Events by Liquidity</div>
+          </div>
+          <div className="panel-body">
+            {topEventsLiq.loading && <div className="loading">Loading…</div>}
+            {topEventsLiq.error && <div className="error">{topEventsLiq.error.message}</div>}
+            {Array.isArray(topEventsLiq.data) && topEventsLiq.data.length > 0 && (
+              <div className="poly-event-list">
+                {topEventsLiq.data.slice(0, 8).map((row, idx) => (
+                  <div key={row.event_slug ?? idx} className="poly-event-row">
+                    <span className="poly-event-rank">{idx + 1}</span>
+                    <div className="poly-event-info">
+                      <div className="poly-event-name">{row.event_title ?? row.event_slug ?? row.title}</div>
+                      <div className="poly-event-meta">
+                        {fmtNum(row.n_markets)} markets · {fmtUsd(row.total_liquidity)} liq
+                      </div>
+                    </div>
+                    <div className="poly-event-stat">{fmtUsd(row.total_volume)}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* ── Global Deltas ── */}
-      <div className="panel" style={{ marginTop: '1rem' }}>
+      {/* ═══ EXPIRING SOON — countdown cards ═══ */}
+      {Array.isArray(expiringSoon.data) && expiringSoon.data.length > 0 && (
+        <div className="poly-expiring-section">
+          <h3 className="poly-section-title">⏱ Expiring Soon</h3>
+          <div className="poly-expiring-grid">
+            {expiringSoon.data.slice(0, 8).map((row, idx) => {
+              const remaining = timeUntil(row.end_date)
+              const yesPrice = typeof row.outcome_yes_price === 'number' ? row.outcome_yes_price : null
+              const isUrgent = remaining.includes('h') && !remaining.includes('d')
+              return (
+                <div key={row.condition_id ?? idx} className={`poly-expiring-card${isUrgent ? ' expiring-urgent' : ''}`}>
+                  <div className="expiring-countdown">{remaining}</div>
+                  <div className="expiring-question">{row.question ?? row.title}</div>
+                  <div className="expiring-footer">
+                    {yesPrice !== null && (
+                      <div className="expiring-price-bar">
+                        <div className="expiring-yes-fill" style={{ width: `${yesPrice * 100}%` }} />
+                        <span className="expiring-yes-label">YES {fmtPct(yesPrice)}</span>
+                      </div>
+                    )}
+                    <div className="expiring-meta">
+                      Vol: {fmtUsd(row.volume)} · Liq: {fmtUsd(row.liquidity)}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+      {expiringSoon.loading && (
+        <div className="panel" style={{ marginTop: '1rem' }}>
+          <div className="panel-body"><div className="loading">Loading expiring markets…</div></div>
+        </div>
+      )}
+
+      {/* ═══ GLOBAL DELTAS TABLE ═══ */}
+      <div className="panel" style={{ marginTop: '1.5rem', marginBottom: '1.5rem' }}>
         <div className="panel-header">
           <div className="panel-title">Global Deltas (run-over-run)</div>
         </div>
@@ -1324,174 +1482,6 @@ function PolyDashboard() {
                 </tbody>
               </table>
             </div>
-          )}
-        </div>
-      </div>
-
-      {/* ── Market Mid-Moves ── */}
-      <div className="panel" style={{ marginTop: '1rem' }}>
-        <div className="panel-header">
-          <div className="panel-title">Market Mid-Moves (24h)</div>
-        </div>
-        <div className="panel-body">
-          {midMoves.loading && <div className="loading">Loading mid-moves…</div>}
-          {midMoves.error   && <div className="error">{midMoves.error.message}</div>}
-          {Array.isArray(midMoves.data) && midMoves.data.length > 0 && (
-            <div className="markets-table-scroll">
-              <table className="markets-table">
-                <thead>
-                  <tr>
-                    <th>Question</th>
-                    <th>Old Price</th>
-                    <th>New Price</th>
-                    <th>Δ Price</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {midMoves.data.slice(0, 15).map((row, idx) => (
-                    <tr key={row.condition_id ?? idx}>
-                      <td>{row.question ?? row.title}</td>
-                      <td>{fmtPct(row.old_price)}</td>
-                      <td>{fmtPct(row.new_price)}</td>
-                      <td
-                        style={{
-                          color:
-                            typeof row.price_diff === 'number'
-                              ? row.price_diff > 0
-                                ? 'var(--clr-green, #4caf50)'
-                                : row.price_diff < 0
-                                ? 'var(--clr-red, #f44336)'
-                                : undefined
-                              : undefined,
-                        }}
-                      >
-                        {typeof row.price_diff === 'number'
-                          ? `${(row.price_diff * 100).toFixed(1)}pp`
-                          : row.price_diff}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          {Array.isArray(midMoves.data) && midMoves.data.length === 0 &&
-            !midMoves.loading && !midMoves.error && (
-            <span className="muted">
-              No mid-move data yet — enable ENABLE_MARKET_SNAPSHOT=1 on the
-              exporter.
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* ── Top Events by Volume ── */}
-      <div className="panel" style={{ marginTop: '1rem' }}>
-        <div className="panel-header">
-          <div className="panel-title">Top Events by Volume</div>
-        </div>
-        <div className="panel-body">
-          {topEventsVolume.loading && <div className="loading">Loading events…</div>}
-          {topEventsVolume.error   && <div className="error">{topEventsVolume.error.message}</div>}
-          {Array.isArray(topEventsVolume.data) && topEventsVolume.data.length > 0 && (
-            <div className="markets-table-scroll">
-              <table className="markets-table">
-                <thead>
-                  <tr>
-                    <th>Event</th>
-                    <th>Markets</th>
-                    <th>Total Volume (USDC)</th>
-                    <th>Total Liquidity (USDC)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {topEventsVolume.data.slice(0, 15).map((row, idx) => (
-                    <tr key={row.event_slug ?? row.event_title ?? idx}>
-                      <td>{row.event_title ?? row.event_slug ?? row.title}</td>
-                      <td>{fmtNum(row.n_markets)}</td>
-                      <td>{fmtNum(row.total_volume)}</td>
-                      <td>{fmtNum(row.total_liquidity)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ── Top Events by Liquidity ── */}
-      <div className="panel" style={{ marginTop: '1rem' }}>
-        <div className="panel-header">
-          <div className="panel-title">Top Events by Liquidity</div>
-        </div>
-        <div className="panel-body">
-          {topEventsLiq.loading && <div className="loading">Loading events…</div>}
-          {topEventsLiq.error   && <div className="error">{topEventsLiq.error.message}</div>}
-          {Array.isArray(topEventsLiq.data) && topEventsLiq.data.length > 0 && (
-            <div className="markets-table-scroll">
-              <table className="markets-table">
-                <thead>
-                  <tr>
-                    <th>Event</th>
-                    <th>Markets</th>
-                    <th>Total Liquidity (USDC)</th>
-                    <th>Total Volume (USDC)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {topEventsLiq.data.slice(0, 15).map((row, idx) => (
-                    <tr key={row.event_slug ?? row.event_title ?? idx}>
-                      <td>{row.event_title ?? row.event_slug ?? row.title}</td>
-                      <td>{fmtNum(row.n_markets)}</td>
-                      <td>{fmtNum(row.total_liquidity)}</td>
-                      <td>{fmtNum(row.total_volume)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ── Expiring Soon ── */}
-      <div className="panel" style={{ marginTop: '1rem', marginBottom: '1.5rem' }}>
-        <div className="panel-header">
-          <div className="panel-title">Markets Expiring Soon (48h)</div>
-        </div>
-        <div className="panel-body">
-          {expiringSoon.loading && <div className="loading">Loading expiring markets…</div>}
-          {expiringSoon.error   && <div className="error">{expiringSoon.error.message}</div>}
-          {Array.isArray(expiringSoon.data) && expiringSoon.data.length > 0 && (
-            <div className="markets-table-scroll">
-              <table className="markets-table">
-                <thead>
-                  <tr>
-                    <th>Question</th>
-                    <th>End Date</th>
-                    <th>Volume (USDC)</th>
-                    <th>Liquidity (USDC)</th>
-                    <th>Yes Price</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {expiringSoon.data.slice(0, 15).map((row, idx) => (
-                    <tr key={row.condition_id ?? idx}>
-                      <td>{row.question ?? row.title}</td>
-                      <td>{row.end_date}</td>
-                      <td>{fmtNum(row.volume)}</td>
-                      <td>{fmtNum(row.liquidity)}</td>
-                      <td>{fmtPct(row.outcome_yes_price)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          {Array.isArray(expiringSoon.data) && expiringSoon.data.length === 0 &&
-            !expiringSoon.loading && !expiringSoon.error && (
-            <span className="muted">No markets expiring within 48 hours.</span>
           )}
         </div>
       </div>
