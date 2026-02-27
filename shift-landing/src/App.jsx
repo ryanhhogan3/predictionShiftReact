@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Routes, Route, Link } from 'react-router-dom'
+import { Routes, Route, Link, NavLink, useLocation } from 'react-router-dom'
 import './App.css'
 
 // Call the API directly from the browser.
@@ -239,60 +239,6 @@ function Last24hChangesPanel({ defaultProvider = 'kalshi' }) {
         <div className="panel-title">Last 24h Changes</div>
       </div>
       <div className="panel-body">
-        <div className="top-changes-controls">
-          <div className="top-changes-control">
-            <label>Provider</label>
-            <select
-              value={provider}
-              onChange={(e) => setProvider(e.target.value)}
-            >
-              <option value="kalshi">Kalshi</option>
-              <option value="poly">Polymarket</option>
-            </select>
-          </div>
-          <div className="top-changes-control">
-            <label>Metric</label>
-            <select
-              value={metric}
-              onChange={(e) => setMetric(e.target.value)}
-            >
-              {metricOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="top-changes-control">
-            <label>Limit</label>
-            <input
-              type="number"
-              min="1"
-              max={TOP_CHANGES_MAX_ROWS}
-              value={limit}
-              onChange={(e) => {
-                const val = Number(e.target.value)
-                if (!Number.isFinite(val) || val <= 0) {
-                  setLimit(TOP_CHANGES_MAX_ROWS)
-                  return
-                }
-                setLimit(Math.min(TOP_CHANGES_MAX_ROWS, Math.floor(val)))
-              }}
-            />
-          </div>
-          <div className="top-changes-control">
-            <label>Min Prev Value</label>
-            <input
-              type="number"
-              step="any"
-              value={minPrevValue}
-              onChange={(e) => {
-                const val = Number(e.target.value)
-                setMinPrevValue(Number.isFinite(val) ? val : 0)
-              }}
-            />
-          </div>
-        </div>
 
         {loading && <div className="loading">Loading 24h changes…</div>}
 
@@ -327,12 +273,14 @@ function Last24hChangesPanel({ defaultProvider = 'kalshi' }) {
             <table className="markets-table">
               <thead>
                 <tr>
-                  <th onClick={() => handleSort('identifier')} className="sortable-header">
-                    Identifier {renderSortArrow('identifier')}
-                  </th>
                   <th onClick={() => handleSort('title')} className="sortable-header">
                     Title / Question {renderSortArrow('title')}
                   </th>
+                  {provider === 'kalshi' && (
+                    <th onClick={() => handleSort('identifier')} className="sortable-header">
+                      Identifier {renderSortArrow('identifier')}
+                    </th>
+                  )}
                   <th onClick={() => handleSort('current_value')} className="sortable-header">
                     Current {renderSortArrow('current_value')}
                   </th>
@@ -344,9 +292,6 @@ function Last24hChangesPanel({ defaultProvider = 'kalshi' }) {
                   </th>
                   <th onClick={() => handleSort('pct_change')} className="sortable-header">
                     % Change {renderSortArrow('pct_change')}
-                  </th>
-                  <th onClick={() => handleSort('latest_snap_ts')} className="sortable-header">
-                    Snapshot Time {renderSortArrow('latest_snap_ts')}
                   </th>
                 </tr>
               </thead>
@@ -362,13 +307,12 @@ function Last24hChangesPanel({ defaultProvider = 'kalshi' }) {
                     : ''
                   return (
                     <tr key={`${getIdentifier(row)}-${idx}`}>
-                      <td>{getIdentifier(row)}</td>
                       <td>{getTitle(row)}</td>
+                      {provider === 'kalshi' && <td>{getIdentifier(row)}</td>}
                       <td>{formatValue(row.current_value)}</td>
                       <td>{formatValue(row.prev_value)}</td>
                       <td className={deltaClass}>{formatValue(row.delta_value)}</td>
                       <td>{formatPct(row.pct_change)}</td>
-                      <td>{row.latest_snap_ts ?? '—'}</td>
                     </tr>
                   )
                 })}
@@ -821,7 +765,7 @@ function Dashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {globalDeltas.data.slice(0, 15).map((row, idx) => (
+                  {globalDeltas.data.slice(0, 10).map((row, idx) => (
                     <tr key={row.snap_ts ?? idx}>
                       <td>{row.snap_ts}</td>
                       <td>
@@ -1351,7 +1295,6 @@ function PolyDashboard() {
               <table className="markets-table">
                 <thead>
                   <tr>
-                    <th>Snapshot Time</th>
                     <th>Total Volume (USDC)</th>
                     <th>Total Liquidity (USDC)</th>
                     <th>Active Markets</th>
@@ -1359,7 +1302,6 @@ function PolyDashboard() {
                 </thead>
                 <tbody>
                   <tr>
-                    <td>{globalSnapshot.data.snap_ts}</td>
                     <td>{fmtNum(globalSnapshot.data.total_volume)}</td>
                     <td>{fmtNum(globalSnapshot.data.total_liquidity)}</td>
                     <td>{fmtNum(globalSnapshot.data.active_markets)}</td>
@@ -1391,7 +1333,7 @@ function PolyDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {globalDeltas.data.slice(0, 15).map((row, idx) => (
+                  {globalDeltas.data.slice(0, 10).map((row, idx) => (
                     <tr key={row.snap_ts ?? idx}>
                       <td>{row.snap_ts}</td>
                       <td>{fmtNum(row.d_volume)}</td>
@@ -2332,6 +2274,9 @@ function VolIndexPage() {
 }
 
 function App() {
+  const location = useLocation()
+  const screenerActive = location.pathname === '/screener' || location.pathname === '/poly-screener'
+
   return (
     <div className="app-shell">
       <svg style={{ width: 0, height: 0, position: 'absolute' }} aria-hidden="true" focusable="false">
@@ -2344,31 +2289,28 @@ function App() {
         </defs>
       </svg>
       <header className="app-nav">
-        <span className="app-logo">Markets Before Headlines</span>
+        <NavLink to="/" end className={({ isActive }) => 'app-logo' + (isActive ? ' active' : '')}>Prediction Shift</NavLink>
         <nav style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
-          <Link to="/" className="app-link">
-            Landing
-          </Link>
-          <Link to="/dashboard" className="app-link">
+          <NavLink to="/dashboard" className={({ isActive }) => 'app-link' + (isActive ? ' active' : '')}>
             Kalshi Dashboard
-          </Link>
-          <div className="nav-dropdown">
+          </NavLink>
+          <NavLink to="/poly-dashboard" className={({ isActive }) => 'app-link' + (isActive ? ' active' : '')}>
+            Poly Dashboard
+          </NavLink>
+          <NavLink to="/vol-index" className={({ isActive }) => 'app-link' + (isActive ? ' active' : '')}>
+            Vol Index
+          </NavLink>
+          <div className={`nav-dropdown${screenerActive ? ' nav-dropdown--active' : ''}`}>
             <span className="app-link nav-dropdown-trigger">Screeners ▾</span>
             <div className="nav-dropdown-menu">
-              <Link to="/screener" className="app-link nav-dropdown-item">
+              <NavLink to="/screener" className={({ isActive }) => 'app-link nav-dropdown-item' + (isActive ? ' active' : '')}>
                 Kalshi Screener <span className="coming-soon-badge">Coming Soon</span>
-              </Link>
-              <Link to="/poly-screener" className="app-link nav-dropdown-item">
+              </NavLink>
+              <NavLink to="/poly-screener" className={({ isActive }) => 'app-link nav-dropdown-item' + (isActive ? ' active' : '')}>
                 Poly Screener <span className="coming-soon-badge">Coming Soon</span>
-              </Link>
+              </NavLink>
             </div>
           </div>
-          <Link to="/poly-dashboard" className="app-link">
-            Poly Dashboard
-          </Link>
-          <Link to="/vol-index" className="app-link">
-            Vol Index
-          </Link>
         </nav>
       </header>
       <main className="app-main">

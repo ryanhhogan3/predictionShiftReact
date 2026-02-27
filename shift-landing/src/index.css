@@ -256,9 +256,43 @@ h1 {
   text-decoration: none;
   transition: color 0.2s ease;
   font-weight: 500;
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
 }
 
-.app-nav a:hover {
+/* active oval indicator */
+.app-nav a.active::after,
+.nav-dropdown--active .nav-dropdown-trigger::after {
+  content: '';
+  display: block;
+  position: absolute;
+  bottom: -14px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 18px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow:
+    0 0 10px rgba(255, 255, 255, 0.9),
+    0 0 20px rgba(255, 255, 255, 0.5),
+    inset 0 1px 2px rgba(255, 255, 255, 1);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  pointer-events: none;
+}
+
+/* keep dropdown-item indicators inside the menu, not below */
+.nav-dropdown-item.active::after {
+  display: none;
+}
+
+.app-nav a:hover,
+.app-nav a.active {
   color: #ffffff;
 }
 
@@ -267,7 +301,7 @@ h1 {
 }
 
 .app-logo {
-  font-size: 1.1rem;
+  font-size: 1.6rem;
   font-weight: 800;
   letter-spacing: 0.05em;
   background: linear-gradient(to right, #fff, #a5b4fc);
@@ -332,9 +366,13 @@ h1 {
   font-weight: 500;
   user-select: none;
   transition: color 0.2s ease;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
 }
 
-.nav-dropdown:hover .nav-dropdown-trigger {
+.nav-dropdown:hover .nav-dropdown-trigger,
+.nav-dropdown--active .nav-dropdown-trigger {
   color: #ffffff;
 }
 
