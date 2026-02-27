@@ -96,6 +96,17 @@ function usePolyApi(endpoint, params) {
   return { data, loading, error }
 }
 
+const KALSHI_CATEGORIES = [
+  'Trending', 'Politics', 'Sports', 'Culture', 'Crypto',
+  'Climate', 'Economics', 'Mentions', 'Companies', 'Financials', 'Tech & Science',
+]
+
+const POLY_CATEGORIES = [
+  'Trending', 'Breaking', 'New', 'Politics', 'Sports', 'Crypto',
+  'Finance', 'Geopolitics', 'Earnings', 'Tech', 'Culture',
+  'World', 'Economy', 'Climate & Science', 'Mentions',
+]
+
 const TOP_CHANGES_METRICS = {
   kalshi: [
     { value: 'volume', label: 'Volume' },
@@ -421,6 +432,7 @@ function LandingPage() {
 }
 
 function Dashboard() {
+  const [activeCategory, setActiveCategory] = useState('Trending')
   const eventsByVolume = useApi('/top-events-volume')
   const spreadBlowouts = useApi('/markets/spread-blowouts')
   const expiringSoon = useApi('/markets/expiring-soon')
@@ -476,6 +488,19 @@ function Dashboard() {
         />
         <span>Prediction Market Dashboard</span>
       </h2>
+
+      <nav className="category-subnav">
+        {KALSHI_CATEGORIES.map((cat) => (
+          <button
+            key={cat}
+            type="button"
+            className={`category-subnav-item${activeCategory === cat ? ' category-subnav-item--active' : ''}`}
+            onClick={() => setActiveCategory(cat)}
+          >
+            {cat}
+          </button>
+        ))}
+      </nav>
 
       <Last24hChangesPanel defaultProvider="kalshi" />
 
@@ -1214,6 +1239,7 @@ function ScreenerPage() {
 // ─── Polymarket Dashboard ────────────────────────────────────────────────────
 
 function PolyDashboard() {
+  const [activeCategory, setActiveCategory] = useState('Trending')
   const globalSnapshot   = usePolyApi('/global-snapshot')
   const globalDeltas     = usePolyApi('/global-deltas', { limit: 20 })
   const topEventsVolume  = usePolyApi('/top-events-volume', { limit: 15 })
@@ -1261,6 +1287,19 @@ function PolyDashboard() {
         />
         <span>Polymarket Dashboard</span>
       </h2>
+
+      <nav className="category-subnav">
+        {POLY_CATEGORIES.map((cat) => (
+          <button
+            key={cat}
+            type="button"
+            className={`category-subnav-item${activeCategory === cat ? ' category-subnav-item--active' : ''}`}
+            onClick={() => setActiveCategory(cat)}
+          >
+            {cat}
+          </button>
+        ))}
+      </nav>
 
       <Last24hChangesPanel defaultProvider="poly" />
 
