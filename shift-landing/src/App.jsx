@@ -26,6 +26,36 @@ export async function getHealth() {
   return response.json()
 }
 
+// Module-level cache shared across all hook calls (stale-while-revalidate)
+// TTL = 55 minutes so data refreshes just before the hourly cadence
+const _apiCache = new Map()
+const CACHE_TTL = 55 * 60 * 1000
+
+function _cachedFetch(url, setter, setLoading, setError, signal) {
+  const cached = _apiCache.get(url)
+  if (cached) {
+    // Serve stale data immediately — no spinner
+    setter(cached.data)
+    setLoading(false)
+    // If still fresh, skip network request
+    if (Date.now() - cached.ts < CACHE_TTL) return
+  }
+
+  fetch(url, { signal })
+    .then((res) => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      return res.json()
+    })
+    .then((json) => {
+      _apiCache.set(url, { data: json, ts: Date.now() })
+      setter(json)
+    })
+    .catch((err) => {
+      if (err.name !== 'AbortError') setError(err)
+    })
+    .finally(() => setLoading(false))
+}
+
 function useApi(endpoint, params) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -33,29 +63,11 @@ function useApi(endpoint, params) {
 
   useEffect(() => {
     const controller = new AbortController()
-    const query = params
-      ? `?${new URLSearchParams(params).toString()}`
-      : ''
+    const query = params ? `?${new URLSearchParams(params).toString()}` : ''
+    const url = `${API_BASE}${endpoint}${query}`
 
-    setLoading(true)
     setError(null)
-
-    fetch(`${API_BASE}${endpoint}${query}`, {
-      signal: controller.signal,
-    })
-      .then((res) => {
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`)
-        }
-        return res.json()
-      })
-      .then((json) => setData(json))
-      .catch((err) => {
-        if (err.name !== 'AbortError') {
-          setError(err)
-        }
-      })
-      .finally(() => setLoading(false))
+    _cachedFetch(url, setData, setLoading, setError, controller.signal)
 
     return () => controller.abort()
   }, [endpoint, JSON.stringify(params)])
@@ -70,25 +82,11 @@ function usePolyApi(endpoint, params) {
 
   useEffect(() => {
     const controller = new AbortController()
-    const query = params
-      ? `?${new URLSearchParams(params).toString()}`
-      : ''
+    const query = params ? `?${new URLSearchParams(params).toString()}` : ''
+    const url = `${POLY_API_BASE}${endpoint}${query}`
 
-    setLoading(true)
     setError(null)
-
-    fetch(`${POLY_API_BASE}${endpoint}${query}`, {
-      signal: controller.signal,
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        return res.json()
-      })
-      .then((json) => setData(json))
-      .catch((err) => {
-        if (err.name !== 'AbortError') setError(err)
-      })
-      .finally(() => setLoading(false))
+    _cachedFetch(url, setData, setLoading, setError, controller.signal)
 
     return () => controller.abort()
   }, [endpoint, JSON.stringify(params)])
@@ -381,7 +379,7 @@ function Dashboard() {
   const spreadBlowouts = useApi('/markets/spread-blowouts')
   const expiringSoon = useApi('/markets/expiring-soon')
   const marketMovers = useApi('/market-movers')
-  const globalDeltas = useApi('/global-6h-deltas', { limit: 30 })
+  const globalDeltas = useApi('/global-6h-deltas', { limit: 150 })
 
   let latestIndex = null
   let shiftChartSeries = null
@@ -407,6 +405,12 @@ function Dashboard() {
 
   const fmtNum = (v) => (typeof v === 'number' ? v.toLocaleString('en-US') : v)
   const fmtDec = (v, d = 1) => (typeof v === 'number' ? v.toFixed(d) : v)
+  const fmtCompact = (v) => {
+    if (typeof v !== 'number') return '—'
+    if (Math.abs(v) >= 1_000_000) return (v / 1_000_000).toFixed(1) + 'M'
+    if (Math.abs(v) >= 1_000) return (v / 1_000).toFixed(1) + 'K'
+    return v.toLocaleString('en-US')
+  }
 
   // compute time-until-expiry helper
   const timeUntilK = (dateStr) => {
@@ -419,15 +423,27 @@ function Dashboard() {
     return `${hrs}h ${mins}m`
   }
 
+  // ── Hero stat aggregates from time-windowed delta rows ──
+  const now = Date.now()
+  const deltaRows = Array.isArray(globalDeltas.data) ? globalDeltas.data : []
+  const rows24h = deltaRows.filter((r) => r.snap_ts && (now - new Date(r.snap_ts).getTime()) < 86_400_000)
+  const rows30d = deltaRows.filter((r) => r.snap_ts && (now - new Date(r.snap_ts).getTime()) < 30 * 86_400_000)
+  const sumField = (rows, field) => rows.reduce((s, r) => s + (typeof r[field] === 'number' ? r[field] : 0), 0)
+
+  const heroVol24h   = rows24h.length > 0 ? sumField(rows24h, 'd_volume_6h') : null
+  const heroVol30d   = rows30d.length > 0 ? sumField(rows30d, 'd_volume_6h') : null
+  const heroOi24h    = rows24h.length > 0 ? sumField(rows24h, 'd_oi_6h')     : null
+  const heroOi30d    = rows30d.length > 0 ? sumField(rows30d, 'd_oi_6h')     : null
+  const heroWide24h  = rows24h.length > 0 ? sumField(rows24h, 'd_wide_6h')   : null
+  const heroWide30d  = rows30d.length > 0 ? sumField(rows30d, 'd_wide_6h')   : null
+
   // latest delta for hero stats
-  const latestDelta = Array.isArray(globalDeltas.data) && globalDeltas.data.length > 0
-    ? globalDeltas.data[0]
-    : null
+  const latestDelta = deltaRows.length > 0 ? deltaRows[0] : null
 
   return (
     <div className="dashboard kalshi-dash">
       <p className="seo-blurb">
-        Market Shift Index 2-hour deltas, real-time market movers, top events by traded volume, spread blowouts, expiring contracts, and global order-flow metrics across prediction markets.
+        Market Shift Index hourly deltas, real-time market movers, top events by traded volume, spread blowouts, expiring contracts, and global order-flow metrics across prediction markets.
       </p>
       <h2 className="dashboard-title">
         <img
@@ -453,57 +469,73 @@ function Dashboard() {
       </nav>
 
       {/* ═══ HERO STATS BAR ═══ */}
-      {latestDelta && (
+      {(heroVol24h !== null || globalDeltas.loading) && (
         <div className="poly-stats-bar" style={{ marginTop: '1.5rem' }}>
-          <div className="poly-stat-card">
-            <div className="poly-stat-label">Δ Volume (6h)</div>
-            <div className="poly-stat-value">
-              {typeof latestDelta.d_volume_6h === 'number'
-                ? latestDelta.d_volume_6h.toLocaleString('en-US')
-                : latestDelta.d_volume_6h}
-            </div>
-            <div className={`poly-stat-delta ${(latestDelta.d_volume_6h ?? 0) >= 0 ? 'up' : 'down'}`}>
-              {(latestDelta.d_volume_6h ?? 0) >= 0 ? '▲' : '▼'} contracts
-            </div>
-          </div>
-          <div className="poly-stat-card">
-            <div className="poly-stat-label">Δ Open Interest (6h)</div>
-            <div className="poly-stat-value">
-              {typeof latestDelta.d_oi_6h === 'number'
-                ? latestDelta.d_oi_6h.toLocaleString('en-US')
-                : latestDelta.d_oi_6h}
-            </div>
-            <div className={`poly-stat-delta ${(latestDelta.d_oi_6h ?? 0) >= 0 ? 'up' : 'down'}`}>
-              {(latestDelta.d_oi_6h ?? 0) >= 0 ? '▲' : '▼'} positions
-            </div>
-          </div>
-          <div className="poly-stat-card">
-            <div className="poly-stat-label">Δ Wide Spreads (6h)</div>
-            <div className="poly-stat-value">
-              {typeof latestDelta.d_wide_6h === 'number'
-                ? latestDelta.d_wide_6h.toLocaleString('en-US')
-                : latestDelta.d_wide_6h}
-            </div>
-            <div className={`poly-stat-delta ${(latestDelta.d_wide_6h ?? 0) >= 0 ? 'up' : 'down'}`}>
-              {(latestDelta.d_wide_6h ?? 0) >= 0 ? '▲' : '▼'} markets
-            </div>
-          </div>
+          {globalDeltas.loading && <div className="loading">Loading stats…</div>}
+          {!globalDeltas.loading && (
+            <>
+              <div className="poly-stat-card">
+                <div className="poly-stat-label">Volume (24h)</div>
+                <div className="poly-stat-value">{fmtCompact(heroVol24h)}</div>
+                {heroVol30d !== null && (
+                  <div className="poly-stat-period-row">
+                    <span className="poly-stat-period-label">30d</span>
+                    <span className="poly-stat-period-value">{fmtCompact(heroVol30d)}</span>
+                  </div>
+                )}
+                {latestDelta && typeof latestDelta.d_volume_6h === 'number' && (
+                  <div className={`poly-stat-delta ${latestDelta.d_volume_6h >= 0 ? 'up' : 'down'}`}>
+                    {latestDelta.d_volume_6h >= 0 ? '▲' : '▼'} {fmtCompact(Math.abs(latestDelta.d_volume_6h))} last 1h
+                  </div>
+                )}
+              </div>
+              <div className="poly-stat-card">
+                <div className="poly-stat-label">Open Interest (24h)</div>
+                <div className="poly-stat-value">{fmtCompact(heroOi24h)}</div>
+                {heroOi30d !== null && (
+                  <div className="poly-stat-period-row">
+                    <span className="poly-stat-period-label">30d</span>
+                    <span className="poly-stat-period-value">{fmtCompact(heroOi30d)}</span>
+                  </div>
+                )}
+                {latestDelta && typeof latestDelta.d_oi_6h === 'number' && (
+                  <div className={`poly-stat-delta ${latestDelta.d_oi_6h >= 0 ? 'up' : 'down'}`}>
+                    {latestDelta.d_oi_6h >= 0 ? '▲' : '▼'} {fmtCompact(Math.abs(latestDelta.d_oi_6h))} last 1h
+                  </div>
+                )}
+              </div>
+              <div className="poly-stat-card">
+                <div className="poly-stat-label">Wide Spreads (24h)</div>
+                <div className="poly-stat-value">{fmtCompact(heroWide24h)}</div>
+                {heroWide30d !== null && (
+                  <div className="poly-stat-period-row">
+                    <span className="poly-stat-period-label">30d</span>
+                    <span className="poly-stat-period-value">{fmtCompact(heroWide30d)}</span>
+                  </div>
+                )}
+                {latestDelta && typeof latestDelta.d_wide_6h === 'number' && (
+                  <div className={`poly-stat-delta ${latestDelta.d_wide_6h >= 0 ? 'up' : 'down'}`}>
+                    {latestDelta.d_wide_6h >= 0 ? '▲' : '▼'} {fmtCompact(Math.abs(latestDelta.d_wide_6h))} last 1h
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
       )}
 
-      {/* ═══ MARKET MOVERS — Pulse Cards ═══ */}
-      {Array.isArray(marketMovers.data) && marketMovers.data.length > 0 && (
-        <div className="poly-pulse-section">
-          <h3 className="poly-section-title">
-            <span className="poly-pulse-dot" /> Market Movers — Biggest Price Shifts
-          </h3>
-          <div className="poly-pulse-grid">
+      {/* ═══ MARKET MOVERS — Leaderboard Feed ═══ */}
+      {(Array.isArray(marketMovers.data) && marketMovers.data.length > 0) && (
+        <div className="movers-section">
+          <div className="movers-section-header">
+            <span className="movers-live-dot" />
+            <span className="movers-section-title">Market Movers</span>
+            <span className="movers-section-sub">Biggest price shifts · 1h window</span>
+          </div>
+          <div className="movers-feed">
             {marketMovers.data.slice(0, 6).map((row, idx) => {
               const diff = typeof row.price_diff === 'number' ? row.price_diff : 0
               const isUp = diff >= 0
-              const absDiff = Math.abs(diff)
-              const barWidth = Math.min(100, (absDiff / 20) * 100)
-              // derive readable name from ticker: strip KX prefix, split on hyphens, titlecase first segment
               const tickerName = (row.market_ticker || '')
                 .replace(/^KX/i, '')
                 .split('-')[0]
@@ -511,25 +543,22 @@ function Dashboard() {
                 .replace(/([A-Z]+)/g, ' $1')
                 .trim()
               return (
-                <div key={row.market_ticker ?? idx} className={`poly-pulse-card ${isUp ? 'pulse-up' : 'pulse-down'}`}>
-                  <div className="pulse-rank">#{idx + 1}</div>
-                  <div className="pulse-question">
-                    <strong>{tickerName}</strong>
-                    <span className="pulse-ticker-id">{row.market_ticker}</span>
+                <div key={row.market_ticker ?? idx} className={`mover-row ${isUp ? 'mover-up' : 'mover-down'}`}>
+                  <div className="mover-rank">#{idx + 1}</div>
+                  <div className={`mover-delta-block ${isUp ? 'delta-up' : 'delta-down'}`}>
+                    <span className="mover-delta-value">{isUp ? '+' : ''}{fmtDec(diff)}¢</span>
+                    <span className="mover-direction">{isUp ? '▲ Rising' : '▼ Falling'}</span>
                   </div>
-                  <div className="pulse-prices">
-                    <span className="pulse-old">{fmtDec(row.old_price)}</span>
-                    <span className="pulse-arrow">→</span>
-                    <span className="pulse-new">{fmtDec(row.new_price)}</span>
-                  </div>
-                  <div className="pulse-bar-track">
-                    <div
-                      className={`pulse-bar-fill ${isUp ? 'fill-up' : 'fill-down'}`}
-                      style={{ width: `${barWidth}%` }}
-                    />
-                  </div>
-                  <div className={`pulse-diff ${isUp ? 'diff-up' : 'diff-down'}`}>
-                    {isUp ? '+' : ''}{fmtDec(diff)} ¢
+                  <div className="mover-info">
+                    <div className="mover-name">{tickerName || row.market_ticker}</div>
+                    <div className="mover-ticker-id">{row.market_ticker}</div>
+                    <div className="mover-price-trail">
+                      <span className="mover-label">Was</span>
+                      <span className="mover-old">{fmtDec(row.old_price)}¢</span>
+                      <span className="mover-arrow-trail">→</span>
+                      <span className="mover-label">Now</span>
+                      <span className="mover-new">{fmtDec(row.new_price)}¢</span>
+                    </div>
                   </div>
                 </div>
               )
@@ -1107,7 +1136,8 @@ function ScreenerPage() {
 function PolyDashboard() {
   const [activeCategory, setActiveCategory] = useState('Trending')
   const globalSnapshot   = usePolyApi('/global-snapshot')
-  const globalDeltas     = usePolyApi('/global-deltas', { limit: 20 })
+  const globalDeltas     = usePolyApi('/global-deltas', { limit: 50 })
+  const globalDeltasFull = usePolyApi('/global-deltas', { limit: 200 })
   const topEventsVolume  = usePolyApi('/top-events-volume', { limit: 15 })
   const topEventsLiq     = usePolyApi('/top-events-liquidity', { limit: 15 })
   const expiringSoon     = usePolyApi('/markets/expiring-soon', { hours: 48, limit: 15 })
@@ -1150,10 +1180,44 @@ function PolyDashboard() {
     return `${hrs}h ${mins}m`
   }
 
-  // find latest delta for snapshot comparison
+  // find latest delta for snapshot comparison (uses small-limit hook)
   const latestDelta = Array.isArray(globalDeltas.data) && globalDeltas.data.length > 0
     ? globalDeltas.data[0]
     : null
+
+  // ── Hero stat aggregates: positional slicing from the full-history hook ──
+  // Assumes snapshots are ordered newest-first. Detect cadence from first two rows.
+  const fullRows = Array.isArray(globalDeltasFull.data) ? globalDeltasFull.data : []
+
+  const detectInterval = (rows) => {
+    if (rows.length < 2) return 3_600_000
+    const t0 = new Date(rows[0]?.snap_ts).getTime()
+    const t1 = new Date(rows[1]?.snap_ts).getTime()
+    const diff = t0 - t1
+    return diff > 0 && diff < 7 * 86_400_000 ? diff : 3_600_000
+  }
+  const snapInterval = detectInterval(fullRows)
+
+  const polySnapsIn24h = Math.max(1, Math.round(86_400_000  / snapInterval))
+  const polySnapsIn30d = Math.max(1, Math.round(30 * 86_400_000 / snapInterval))
+
+  const polyRows24h = fullRows.slice(0, Math.min(polySnapsIn24h, fullRows.length))
+  const polyRows30d = fullRows.slice(0, Math.min(polySnapsIn30d, fullRows.length))
+
+  const polySum = (rows, field) => rows.reduce((s, r) => s + (typeof r[field] === 'number' ? r[field] : 0), 0)
+
+  const polyVol24h = polyRows24h.length > 0 ? polySum(polyRows24h, 'd_volume')    : null
+  const polyVol30d = polyRows30d.length > 0 ? polySum(polyRows30d, 'd_volume')    : null
+  const polyLiq24h = polyRows24h.length > 0 ? polySum(polyRows24h, 'd_liquidity') : null
+  const polyLiq30d = polyRows30d.length > 0 ? polySum(polyRows30d, 'd_liquidity') : null
+
+  // Human-readable label for the detected snapshot cadence
+  const snapIntervalLabel = (() => {
+    const mins = Math.round(snapInterval / 60_000)
+    if (mins < 60) return `last ${mins}m`
+    const hrs = Math.round(snapInterval / 3_600_000)
+    return `last ${hrs}h`
+  })()
 
   return (
     <div className="dashboard poly-dash">
@@ -1186,70 +1250,101 @@ function PolyDashboard() {
 
       {/* ═══ HERO STATS BAR ═══ */}
       <div className="poly-stats-bar">
-        {globalSnapshot.loading && <div className="loading">Loading stats…</div>}
-        {globalSnapshot.data && !globalSnapshot.loading && (
+        {(globalDeltasFull.loading && globalSnapshot.loading) && <div className="loading">Loading stats…</div>}
+        {(!globalDeltasFull.loading || !globalSnapshot.loading) && (
           <>
             <div className="poly-stat-card">
-              <div className="poly-stat-label">Total Volume</div>
-              <div className="poly-stat-value">{fmtUsd(globalSnapshot.data.total_volume)}</div>
+              <div className="poly-stat-label">Volume (24h)</div>
+              <div className="poly-stat-value">
+                {polyVol24h !== null
+                  ? fmtUsd(polyVol24h)
+                  : globalSnapshot.loading ? '…' : fmtUsd(globalSnapshot.data?.total_volume)}
+              </div>
+              {polyVol30d !== null && polyVol30d !== polyVol24h && (
+                <div className="poly-stat-period-row">
+                  <span className="poly-stat-period-label">30d</span>
+                  <span className="poly-stat-period-value">{fmtUsd(polyVol30d)}</span>
+                </div>
+              )}
               {latestDelta && typeof latestDelta.d_volume === 'number' && (
                 <div className={`poly-stat-delta ${latestDelta.d_volume >= 0 ? 'up' : 'down'}`}>
-                  {latestDelta.d_volume >= 0 ? '▲' : '▼'} {fmtUsd(Math.abs(latestDelta.d_volume))}
+                  {latestDelta.d_volume >= 0 ? '▲' : '▼'} {fmtUsd(Math.abs(latestDelta.d_volume))} {snapIntervalLabel}
                 </div>
               )}
             </div>
             <div className="poly-stat-card">
-              <div className="poly-stat-label">Total Liquidity</div>
-              <div className="poly-stat-value">{fmtUsd(globalSnapshot.data.total_liquidity)}</div>
+              <div className="poly-stat-label">Liquidity (24h)</div>
+              <div className="poly-stat-value">
+                {polyLiq24h !== null
+                  ? fmtUsd(polyLiq24h)
+                  : globalSnapshot.loading ? '…' : fmtUsd(globalSnapshot.data?.total_liquidity)}
+              </div>
+              {polyLiq30d !== null && polyLiq30d !== polyLiq24h && (
+                <div className="poly-stat-period-row">
+                  <span className="poly-stat-period-label">30d</span>
+                  <span className="poly-stat-period-value">{fmtUsd(polyLiq30d)}</span>
+                </div>
+              )}
               {latestDelta && typeof latestDelta.d_liquidity === 'number' && (
                 <div className={`poly-stat-delta ${latestDelta.d_liquidity >= 0 ? 'up' : 'down'}`}>
-                  {latestDelta.d_liquidity >= 0 ? '▲' : '▼'} {fmtUsd(Math.abs(latestDelta.d_liquidity))}
+                  {latestDelta.d_liquidity >= 0 ? '▲' : '▼'} {fmtUsd(Math.abs(latestDelta.d_liquidity))} {snapIntervalLabel}
                 </div>
               )}
             </div>
             <div className="poly-stat-card">
-              <div className="poly-stat-label">Active Markets</div>
-              <div className="poly-stat-value">{fmtNum(globalSnapshot.data.active_markets)}</div>
-              {latestDelta && typeof latestDelta.d_markets === 'number' && (
-                <div className={`poly-stat-delta ${latestDelta.d_markets >= 0 ? 'up' : 'down'}`}>
-                  {latestDelta.d_markets >= 0 ? '+' : ''}{latestDelta.d_markets}
-                </div>
-              )}
+              <div className="poly-stat-label">Vol Index</div>
+              <div className="poly-stat-value">
+                {volIndex.loading ? '…' : latestVolIndex !== null ? fmtDec(latestVolIndex, 2) : '—'}
+              </div>
+              <div className="poly-stat-period-row" style={{ visibility: 'hidden' }}>
+                <span className="poly-stat-period-label">30d</span>
+                <span className="poly-stat-period-value">—</span>
+              </div>
+              {(() => {
+                if (!volChartSeries) return null
+                const vals = volChartSeries[0].values
+                if (vals.length < 2) return null
+                const diff = vals[vals.length - 1] - vals[vals.length - 2]
+                const isUp = diff >= 0
+                return (
+                  <div className={`poly-stat-delta ${isUp ? 'up' : 'down'}`}>
+                    {isUp ? '▲' : '▼'} {Math.abs(diff).toFixed(2)} {snapIntervalLabel}
+                  </div>
+                )
+              })()}
             </div>
           </>
         )}
       </div>
 
-      {/* ═══ MARKET PULSE — biggest mid-moves ═══ */}
-      {Array.isArray(midMoves.data) && midMoves.data.length > 0 && (
-        <div className="poly-pulse-section">
-          <h3 className="poly-section-title">
-            <span className="poly-pulse-dot" /> Market Pulse — Biggest Moves (24h)
-          </h3>
-          <div className="poly-pulse-grid">
+      {/* ═══ MARKET PULSE — Leaderboard Feed ═══ */}
+      {(Array.isArray(midMoves.data) && midMoves.data.length > 0) && (
+        <div className="movers-section">
+          <div className="movers-section-header">
+            <span className="movers-live-dot" />
+            <span className="movers-section-title">Market Pulse</span>
+            <span className="movers-section-sub">Biggest moves · 24h window</span>
+          </div>
+          <div className="movers-feed">
             {midMoves.data.slice(0, 6).map((row, idx) => {
               const diff = typeof row.price_diff === 'number' ? row.price_diff : 0
               const isUp = diff >= 0
-              const absDiff = Math.abs(diff * 100)
-              // bar width: map 0-50pp → 0-100% width
-              const barWidth = Math.min(100, (absDiff / 30) * 100)
               return (
-                <div key={row.condition_id ?? idx} className={`poly-pulse-card ${isUp ? 'pulse-up' : 'pulse-down'}`}>
-                  <div className="pulse-rank">#{idx + 1}</div>
-                  <div className="pulse-question">{row.question ?? row.title}</div>
-                  <div className="pulse-prices">
-                    <span className="pulse-old">{fmtPct(row.old_price)}</span>
-                    <span className="pulse-arrow">{isUp ? '→' : '→'}</span>
-                    <span className="pulse-new">{fmtPct(row.new_price)}</span>
+                <div key={row.condition_id ?? idx} className={`mover-row ${isUp ? 'mover-up' : 'mover-down'}`}>
+                  <div className="mover-rank">#{idx + 1}</div>
+                  <div className={`mover-delta-block ${isUp ? 'delta-up' : 'delta-down'}`}>
+                    <span className="mover-delta-value">{isUp ? '+' : ''}{(diff * 100).toFixed(1)}pp</span>
+                    <span className="mover-direction">{isUp ? '▲ Rising' : '▼ Falling'}</span>
                   </div>
-                  <div className="pulse-bar-track">
-                    <div
-                      className={`pulse-bar-fill ${isUp ? 'fill-up' : 'fill-down'}`}
-                      style={{ width: `${barWidth}%` }}
-                    />
-                  </div>
-                  <div className={`pulse-diff ${isUp ? 'diff-up' : 'diff-down'}`}>
-                    {isUp ? '+' : ''}{(diff * 100).toFixed(1)}pp
+                  <div className="mover-info">
+                    <div className="mover-name">{row.question ?? row.title}</div>
+                    <div className="mover-price-trail">
+                      <span className="mover-label">Was</span>
+                      <span className="mover-old">{fmtPct(row.old_price)}</span>
+                      <span className="mover-arrow-trail">→</span>
+                      <span className="mover-label">Now</span>
+                      <span className="mover-new">{fmtPct(row.new_price)}</span>
+                    </div>
                   </div>
                 </div>
               )
@@ -1680,6 +1775,168 @@ function PolyScreenerPage() {
   )
 }
 
+// ─── Treemap helpers ─────────────────────────────────────────────────────────
+
+function tmLayout(items, x = 0, y = 0, w = 100, h = 100) {
+  if (!items || items.length === 0) return []
+  if (items.length === 1) return [{ ...items[0], x, y, w, h }]
+  const sorted = [...items].sort((a, b) => b.value - a.value)
+  const total = sorted.reduce((s, it) => s + it.value, 0)
+  if (total === 0) return sorted.map((it, i) => ({ ...it, x: x + (i / sorted.length) * w, y, w: w / sorted.length, h }))
+  let cum = 0, splitIdx = sorted.length - 1
+  for (let i = 0; i < sorted.length - 1; i++) {
+    cum += sorted[i].value
+    if (cum >= total / 2) { splitIdx = i; break }
+  }
+  const first = sorted.slice(0, splitIdx + 1)
+  const second = sorted.slice(splitIdx + 1)
+  const ratio = first.reduce((s, it) => s + it.value, 0) / total
+  const wide = w >= h
+  const [r1, r2] = wide
+    ? [{ x, y, w: w * ratio, h }, { x: x + w * ratio, y, w: w * (1 - ratio), h }]
+    : [{ x, y, w, h: h * ratio }, { x, y: y + h * ratio, w, h: h * (1 - ratio) }]
+  return [...tmLayout(first, r1.x, r1.y, r1.w, r1.h), ...tmLayout(second, r2.x, r2.y, r2.w, r2.h)]
+}
+
+function lerpC(a, b, t) { return Math.round(a + (b - a) * t) }
+
+function heatColor(v) {
+  const c = Math.max(-1, Math.min(1, v))
+  if (c >= 0) return `rgb(${lerpC(30,52,c)},${lerpC(41,211,c)},${lerpC(59,153,c)})`
+  const t = -c
+  return `rgb(${lerpC(30,248,t)},${lerpC(41,113,t)},${lerpC(59,113,t)})`
+}
+
+function VolHeatmap({ tiles, loading, error, sizeLabel = 'Volume', heatLabel = 'Avg Price Shift' }) {
+  const [hovered, setHovered] = useState(null)
+
+  if (loading) return <div className="loading">Building heatmap…</div>
+  if (error) return <div className="error">{error.message}</div>
+  const valid = (tiles || []).filter((t) => t.value > 0)
+  if (valid.length === 0) return <span className="muted">No sector data available yet.</span>
+
+  const rects = tmLayout(valid)
+  const maxHeat = Math.max(...valid.map((t) => Math.abs(t.heat ?? 0)), 0.001)
+  const PAD = 0.4
+
+  const hoveredRect = hovered !== null ? rects[hovered] : null
+
+  return (
+    <div className="vol-heatmap-wrap">
+      <svg
+        viewBox="0 0 100 60"
+        className="vol-heatmap-svg"
+        preserveAspectRatio="xMidYMid meet"
+      >
+        {rects.map((rect, i) => {
+          const norm = (rect.heat ?? 0) / maxHeat
+          const fill = heatColor(norm)
+          const rx = rect.x + PAD / 2
+          const ry = rect.y + PAD / 2
+          const rw = Math.max(0, rect.w - PAD)
+          const rh = Math.max(0, rect.h - PAD)
+          if (rw < 0.5 || rh < 0.5) return null
+          const area = rw * rh
+          const fs = Math.max(1.1, Math.min(3.8, rw / 7))
+          const subFs = fs * 0.72
+          const showLabel = area > 8
+          const showSub = area > 22 && rect.heatLabel
+          const maxChars = Math.max(2, Math.floor(rw / fs * 1.6))
+          const labelText = (rect.label || '').length > maxChars
+            ? (rect.label || '').slice(0, maxChars - 1) + '…'
+            : (rect.label || '')
+          const isHov = hovered === i
+          return (
+            <g key={rect.label + i}>
+              <rect
+                x={rx} y={ry} width={rw} height={rh}
+                fill={fill}
+                rx={0.5}
+                stroke={isHov ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)'}
+                strokeWidth={isHov ? 0.35 : 0.15}
+                style={{ cursor: 'pointer', transition: 'stroke 0.12s, stroke-width 0.12s' }}
+                onMouseEnter={() => setHovered(i)}
+                onMouseLeave={() => setHovered(null)}
+              />
+              {showLabel && (
+                <>
+                  <text
+                    x={rx + rw / 2}
+                    y={ry + rh / 2 - (showSub ? subFs * 0.65 : 0)}
+                    textAnchor="middle"
+                    dominantBaseline="middle"
+                    fontSize={fs}
+                    fontWeight="700"
+                    fill="rgba(255,255,255,0.93)"
+                    style={{ pointerEvents: 'none', userSelect: 'none' }}
+                  >
+                    {labelText}
+                  </text>
+                  {showSub && (
+                    <text
+                      x={rx + rw / 2}
+                      y={ry + rh / 2 + fs * 0.72}
+                      textAnchor="middle"
+                      dominantBaseline="middle"
+                      fontSize={subFs}
+                      fontWeight="600"
+                      fill={norm >= 0 ? 'rgba(52,211,153,0.85)' : 'rgba(248,113,113,0.85)'}
+                      style={{ pointerEvents: 'none', userSelect: 'none' }}
+                    >
+                      {rect.heatLabel}
+                    </text>
+                  )}
+                </>
+              )}
+            </g>
+          )
+        })}
+      </svg>
+
+      {/* Hover detail card */}
+      <div className={`vol-heatmap-detail${hoveredRect ? ' visible' : ''}`}>
+        {hoveredRect ? (
+          <>
+            <div className="hm-detail-name">{hoveredRect.label}</div>
+            {hoveredRect.sublabel && <div className="hm-detail-sub">{hoveredRect.sublabel}</div>}
+            <div className="hm-detail-grid">
+              <span className="hm-detail-key">{sizeLabel}</span>
+              <span className="hm-detail-val">
+                {typeof hoveredRect.value === 'number'
+                  ? hoveredRect.value >= 1_000_000
+                    ? (hoveredRect.value / 1_000_000).toFixed(1) + 'M'
+                    : hoveredRect.value >= 1_000
+                      ? (hoveredRect.value / 1_000).toFixed(1) + 'K'
+                      : hoveredRect.value.toLocaleString('en-US')
+                  : hoveredRect.value}
+              </span>
+              <span className="hm-detail-key">{heatLabel}</span>
+              <span className={`hm-detail-val ${(hoveredRect.heat ?? 0) >= 0 ? 'tip-up' : 'tip-down'}`}>
+                {hoveredRect.heatLabel || '—'}
+              </span>
+              {hoveredRect.count != null && (
+                <>
+                  <span className="hm-detail-key">Markets</span>
+                  <span className="hm-detail-val">{hoveredRect.count}</span>
+                </>
+              )}
+            </div>
+          </>
+        ) : (
+          <span className="hm-detail-hint">Hover a tile for details</span>
+        )}
+      </div>
+
+      {/* Legend */}
+      <div className="vol-heatmap-legend">
+        <span className="hm-leg-label down">▼ Falling</span>
+        <div className="hm-leg-bar" />
+        <span className="hm-leg-label up">▲ Rising</span>
+      </div>
+    </div>
+  )
+}
+
 // ─── Vol Index Page ───────────────────────────────────────────────────────────
 
 function buildNormPoints(values, w = 100, h = 40, pad = 4) {
@@ -1976,9 +2233,17 @@ function VolatilityGauge({ value, min = 0, max = 100, label }) {
 }
 
 function VolIndexPage() {
-  const kalshiDeltas = useApi('/global-6h-deltas', { limit: 50 })
-  const polyVolIndex = usePolyApi('/vol/index/global', { points: 50 })
-  const polyDeltas   = usePolyApi('/global-deltas', { limit: 50 })
+  const [hmProvider, setHmProvider] = useState('kalshi')
+
+  const kalshiDeltas   = useApi('/global-6h-deltas', { limit: 50 })
+  const polyVolIndex   = usePolyApi('/vol/index/global', { points: 50 })
+  const polyDeltas     = usePolyApi('/global-deltas', { limit: 50 })
+
+  // ── Extra data for sector heatmap ──
+  const kalshiScreener = useApi('/markets/screener', { limit: 500 })
+  const kalshiMovers   = useApi('/market-movers')
+  const polyTopEvents  = usePolyApi('/top-events-volume', { limit: 50 })
+  const polyMidMoves   = usePolyApi('/markets/mid-moves', { hours: 24, limit: 60 })
 
   // ── Kalshi index (volume + OI + breadth normalized composite) ──
   let kalshiIndexPoints = ''
@@ -2057,6 +2322,120 @@ function VolIndexPage() {
     combinedLatest = validCombined[validCombined.length - 1]?.toFixed(1);
   }
 
+  // ── Heatmap tiles: Kalshi — group screener rows by series, heat from movers ──
+  const kalshiTiles = (() => {
+    if (!Array.isArray(kalshiScreener.data) || kalshiScreener.data.length === 0) return []
+    // Build price-diff lookup from movers
+    const diffMap = {}
+    if (Array.isArray(kalshiMovers.data)) {
+      kalshiMovers.data.forEach((m) => {
+        if (m.market_ticker && typeof m.price_diff === 'number') {
+          diffMap[m.market_ticker] = m.price_diff
+        }
+      })
+    }
+    // Extract series from ticker: strip KX prefix, take first segment before '-'
+    const groups = {}
+    kalshiScreener.data.forEach((row) => {
+      const series = (row.market_ticker || '')
+        .replace(/^KX/i, '')
+        .split('-')[0]
+        .toUpperCase() || 'OTHER'
+      if (!groups[series]) groups[series] = { volume: 0, diffSum: 0, diffCount: 0, count: 0 }
+      const vol = typeof row.volume === 'number' ? row.volume : 0
+      groups[series].volume += vol
+      groups[series].count += 1
+      const diff = diffMap[row.market_ticker]
+      if (typeof diff === 'number') {
+        groups[series].diffSum += diff * vol // volume-weighted
+        groups[series].diffCount += vol
+      }
+    })
+    return Object.entries(groups)
+      .filter(([, g]) => g.volume > 0)
+      .map(([series, g]) => {
+        const avgDiff = g.diffCount > 0 ? g.diffSum / g.diffCount : 0
+        const sign = avgDiff >= 0 ? '+' : ''
+        return {
+          label: series,
+          value: g.volume,
+          heat: avgDiff,
+          count: g.count,
+          heatLabel: g.diffCount > 0 ? `${sign}${avgDiff.toFixed(1)}¢` : null,
+          sublabel: `${g.count} markets`,
+        }
+      })
+      .sort((a, b) => b.value - a.value)
+  })()
+
+  // ── Heatmap tiles: Polymarket — group mid-moves by keyword category ──
+  const POLY_KEYWORD_CATS = [
+    ['Crypto',     /bitcoin|btc|eth|ethereum|sol|solana|doge|xrp|crypto|coin/i],
+    ['Politics',   /trump|biden|harris|election|president|senate|congress|vote|poll|democrat|republican|governor/i],
+    ['Sports',     /nba|nfl|mlb|nhl|soccer|football|basketball|baseball|tennis|golf|olympics|ufc|mma|f1|formula/i],
+    ['Finance',    /fed|inflation|gdp|rate|economy|recession|market|nasdaq|s&p|dow|interest|oil|gold/i],
+    ['Geopolitics',/war|ukraine|russia|israel|gaza|nato|china|taiwan|iran|north.korea|middle.east/i],
+    ['Tech',       /ai|openai|apple|google|microsoft|nvidia|tesla|meta|amazon|twitter|chatgpt|model/i],
+    ['Climate',    /climate|weather|hurricane|earthquake|wildfire|flood|temperature/i],
+  ]
+  function polyCategory(question) {
+    const q = (question || '').toLowerCase()
+    for (const [cat, re] of POLY_KEYWORD_CATS) {
+      if (re.test(q)) return cat
+    }
+    return 'Other'
+  }
+
+  const polyTiles = (() => {
+    if (!Array.isArray(polyMidMoves.data) || polyMidMoves.data.length === 0) return []
+    // Build volume lookup from top events (keyed by condition_id or merged by question)
+    // topEventsVolume doesn't share IDs with midMoves, so we use midMoves directly:
+    // size = equal weight (no volume on mid-moves endpoint), heat = price_diff
+    // Fallback: if polyTopEvents has data, use it for volume context
+    const groups = {}
+    polyMidMoves.data.forEach((row) => {
+      const cat = polyCategory(row.question ?? row.title ?? '')
+      if (!groups[cat]) groups[cat] = { diffSum: 0, count: 0 }
+      const diff = typeof row.price_diff === 'number' ? row.price_diff * 100 : 0
+      groups[cat].diffSum += diff
+      groups[cat].count += 1
+    })
+    // For size: try to use topEventsVolume volume by category match
+    const evtVolByCat = {}
+    if (Array.isArray(polyTopEvents.data)) {
+      polyTopEvents.data.forEach((ev) => {
+        // Guess category from event_ticker first segment
+        const prefix = (ev.event_ticker || '').split('-')[0].toUpperCase()
+        const cat = polyCategory(ev.event_ticker || prefix)
+        evtVolByCat[cat] = (evtVolByCat[cat] || 0) + (ev.total_volume || 0)
+      })
+    }
+    return Object.entries(groups)
+      .map(([cat, g]) => {
+        const avgDiff = g.count > 0 ? g.diffSum / g.count : 0
+        const sign = avgDiff >= 0 ? '+' : ''
+        // Use top-events volume for tile size when available, otherwise use market count
+        const vol = evtVolByCat[cat] || g.count * 1000
+        return {
+          label: cat,
+          value: vol,
+          heat: avgDiff,
+          count: g.count,
+          heatLabel: `${sign}${avgDiff.toFixed(1)}pp`,
+          sublabel: `${g.count} markets`,
+        }
+      })
+      .sort((a, b) => b.value - a.value)
+  })()
+
+  const hmLoading = hmProvider === 'kalshi'
+    ? kalshiScreener.loading || kalshiMovers.loading
+    : polyMidMoves.loading
+  const hmError = hmProvider === 'kalshi'
+    ? kalshiScreener.error || kalshiMovers.error
+    : polyMidMoves.error
+  const hmTiles = hmProvider === 'kalshi' ? kalshiTiles : polyTiles
+
   return (
     <div className="dashboard">
       <p className="seo-blurb">
@@ -2064,6 +2443,51 @@ function VolIndexPage() {
         tracking Kalshi's Market Shift Index (volume, open-interest, and breadth deltas).
       </p>
       <h2>Global Volatility Index</h2>
+
+      {/* ═══ SECTOR VOLATILITY HEATMAP ═══ */}
+      <div className="panel" style={{ marginTop: '1.5rem' }}>
+        <div className="panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div>
+            <div className="panel-title">Sector Volatility Heatmap</div>
+            <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.35)', marginTop: '0.15rem' }}>
+              Tile size = trading volume &nbsp;·&nbsp; Color = price direction
+            </div>
+          </div>
+          <div className="hm-provider-tabs">
+            <button
+              type="button"
+              className={`hm-tab${hmProvider === 'kalshi' ? ' active' : ''}`}
+              onClick={() => setHmProvider('kalshi')}
+            >
+              <img src={KALSHI_LOGO_URL} alt="" style={{ height: '14px', width: '14px', objectFit: 'contain' }} />
+              Kalshi
+            </button>
+            <button
+              type="button"
+              className={`hm-tab${hmProvider === 'poly' ? ' active' : ''}`}
+              onClick={() => setHmProvider('poly')}
+            >
+              <img src={POLYMARKET_LOGO_URL} alt="" style={{ height: '14px', width: '14px', objectFit: 'contain' }} />
+              Polymarket
+            </button>
+          </div>
+        </div>
+        <div className="panel-body">
+          <VolHeatmap
+            tiles={hmTiles}
+            loading={hmLoading}
+            error={hmError}
+            sizeLabel="Volume"
+            heatLabel={hmProvider === 'kalshi' ? 'Avg Price Shift' : 'Avg Move (24h)'}
+          />
+          <p className="panel-methodology" style={{ marginTop: '0.75rem' }}>
+            Each tile represents a market series or category.{' '}
+            {hmProvider === 'kalshi'
+              ? 'Tile size reflects total traded volume across all contracts in that series. Color (green = rising, red = falling) reflects the volume-weighted average price change from recent market-mover data.'
+              : 'Tile size reflects total event volume. Color reflects the average price movement across the top 24h movers in each category, derived from keyword classification of market questions.'}
+          </p>
+        </div>
+      </div>
 
       <div
         className="vol-index-grid"
