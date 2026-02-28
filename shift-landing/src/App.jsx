@@ -1800,10 +1800,23 @@ function tmLayout(items, x = 0, y = 0, w = 100, h = 100) {
 
 function lerpC(a, b, t) { return Math.round(a + (b - a) * t) }
 
-function heatColor(v) {
-  // Magnitude-based: 0 = quiet (dark gray), 1 = hot (bright green)
-  const t = Math.max(0, Math.min(1, Math.abs(v)))
-  return `rgb(${lerpC(38,16,t)},${lerpC(42,185,t)},${lerpC(48,85,t)})`
+function heatColor(norm, direction = 0) {
+  // Directional: green = probability UP, red = probability DOWN
+  // norm = 0→1 magnitude, direction = sign of the shift
+  // Floor of ~0.18 ensures even quiet tiles are clearly visible against the bg
+  const t = Math.max(0, Math.min(1, norm))
+  const floor = 0.18
+  const s = floor + t * (1 - floor) // effective intensity, never below floor
+  if (direction > 0) {
+    // Up → green: visible dark teal → bright green
+    return `rgb(${lerpC(22, 10, s)},${lerpC(58, 200, s)},${lerpC(52, 90, s)})`
+  }
+  if (direction < 0) {
+    // Down → red: visible dark maroon → bright red
+    return `rgb(${lerpC(62, 210, s)},${lerpC(34, 28, s)},${lerpC(40, 38, s)})`
+  }
+  // Neutral (0 shift) → muted gray (still visible)
+  return `rgb(45,50,58)`
 }
 
 function VolHeatmap({ groups, loading, error }) {
@@ -1815,8 +1828,13 @@ function VolHeatmap({ groups, loading, error }) {
   const valid = (groups || []).filter((g) => g.totalValue > 0)
   if (valid.length === 0) return <span className="muted">No sector data available yet.</span>
 
-  // Use fixed scale so small shifts stay gray: 500 = only massive moves glow
-  const maxHeat = 500
+  // Compute dynamic maxHeat from actual data so color gradient spans the real range
+  const allHeats = (groups || []).flatMap((g) =>
+    (g.children || []).map((c) => Math.abs(c.heat ?? 0))
+  )
+  const maxHeat = allHeats.length > 0
+    ? Math.max(20, ...allHeats) // floor of 20 prevents division by tiny values
+    : 50
   const GAP = 0.2
   const HEADER_H = 3.2
 
@@ -1848,6 +1866,7 @@ function VolHeatmap({ groups, loading, error }) {
           timeframe: rect.timeframe,
           gi: drillCat, ci,
           norm: Math.abs(rect.heat ?? 0) / maxHeat,
+          direction: (rect.heat ?? 0),
         })
       })
       return drillElements
@@ -1883,6 +1902,7 @@ function VolHeatmap({ groups, loading, error }) {
             timeframe: rect.timeframe,
             gi, ci,
             norm: Math.abs(rect.heat ?? 0) / maxHeat,
+            direction: (rect.heat ?? 0),
           })
         })
       }
@@ -1932,9 +1952,9 @@ function VolHeatmap({ groups, loading, error }) {
             const ry = el.y + GAP / 2
             const rw = Math.max(0, el.w - GAP)
             const rh = Math.max(0, el.h - GAP)
-            if (rw < 1 || rh < 1) return null
-            const fs = Math.min(2, Math.max(1, rw / 14))
-            const showLabel = rw > 5
+            if (rw < 0.8 || rh < 0.8) return null
+            const fs = Math.min(1.8, Math.max(0.6, Math.min(rw / 8, rh / 4)))
+            const showLabel = rw > 2.5 || rh > 3
             return (
               <g key={`cat-${i}`} style={{ cursor: 'pointer' }} onClick={() => handleCatClick(el.gi)}>
                 <rect
@@ -1944,23 +1964,29 @@ function VolHeatmap({ groups, loading, error }) {
                   strokeWidth={0.15}
                   rx={0.4}
                 />
-                {showLabel && (
+                {showLabel && (() => {
+                  const maxCatChars = Math.max(2, Math.floor(rw / (fs * 0.65)))
+                  const catLabel = el.category.length > maxCatChars
+                    ? el.category.slice(0, maxCatChars - 1) + '…'
+                    : el.category
+                  return (
                   <text
-                    x={rx + 0.6} y={ry + HEADER_H * 0.62}
+                    x={rx + 0.4} y={ry + Math.min(HEADER_H, rh * 0.35) * 0.62}
                     fontSize={fs}
                     fontWeight="800"
-                    fill="rgba(255,255,255,0.55)"
+                    fill="rgba(255,255,255,0.7)"
                     style={{ pointerEvents: 'none', userSelect: 'none', textTransform: 'uppercase', letterSpacing: '0.04em' }}
                   >
-                    {el.category}
+                    {catLabel}
                   </text>
-                )}
+                  )
+                })()}
               </g>
             )
           }
           if (el.type === 'market') {
             const norm = Math.max(0, Math.min(1, el.norm))
-            const fill = heatColor(norm)
+            const fill = heatColor(norm, el.direction)
             const pad = 0.12
             const rx = el.x + pad
             const ry = el.y + pad
@@ -1970,15 +1996,15 @@ function VolHeatmap({ groups, loading, error }) {
             const area = rw * rh
             // Drilled-in tiles are much larger, so we can always show more info
             const fs = isDrilled
-              ? Math.max(1, Math.min(3, rw / 5))
-              : Math.max(0.7, Math.min(2.6, rw / 6.5))
-            const subFs = fs * 0.68
-            const showLabel = isDrilled ? area > 1 : area > 3
-            const showHeat = isDrilled ? area > 4 : (area > 8 && el.heatLabel)
+              ? Math.max(0.7, Math.min(1.8, rw / 8))
+              : Math.max(0.55, Math.min(1.6, rw / 8))
+            const subFs = fs * 0.72
+            const showLabel = isDrilled ? area > 0.5 : area > 1.5
+            const showHeat = isDrilled ? area > 2 : (area > 5 && el.heatLabel)
             // In drill mode, show extra detail lines (old→new, ticker, volume)
-            const showExtra = isDrilled && area > 12
+            const showExtra = isDrilled && area > 10
             const maxChars = isDrilled
-              ? Math.max(4, Math.floor(rw / fs * 2))
+              ? Math.max(6, Math.floor(rw / fs * 1.8))
               : Math.max(2, Math.floor(rw / fs * 1.5))
             const label = (el.label || '').length > maxChars
               ? (el.label || '').slice(0, maxChars - 1) + '…'
@@ -2117,9 +2143,11 @@ function VolHeatmap({ groups, loading, error }) {
 
       {/* Legend */}
       <div className="vol-heatmap-legend">
+        <span className="hm-leg-label down">▼ Down</span>
+        <div className="hm-leg-bar-down" />
         <span className="hm-leg-label quiet">Quiet</span>
-        <div className="hm-leg-bar" />
-        <span className="hm-leg-label hot">🔥 Biggest Shifts</span>
+        <div className="hm-leg-bar-up" />
+        <span className="hm-leg-label up">▲ Up</span>
       </div>
     </div>
   )
@@ -2427,8 +2455,8 @@ function VolIndexPage() {
   const polyVolIndex   = usePolyApi('/vol/index/global', { points: 50 })
   const polyDeltas     = usePolyApi('/global-deltas', { limit: 50 })
 
-  // ── Extra data for sector heatmap ──
-  const kalshiMovers   = useApi('/market-movers')
+  // ── Extra data for sector heatmap (top-changes-24h has volume+OI+title) ──
+  const kalshiMovers   = useApi('/markets/top-changes-24h', { metric: 'mid', limit: 100 })
   const polyMidMoves   = usePolyApi('/markets/mid-moves', { hours: 24, limit: 100 })
 
   // ── Kalshi index (volume + OI + breadth normalized composite) ──
@@ -2532,16 +2560,25 @@ function VolIndexPage() {
     movers.forEach((m) => {
       const cat = kalshiCategory(m.market_ticker)
       if (!groups[cat]) groups[cat] = { children: [] }
+      // Prefer API title, fall back to ticker-derived label
+      const rawTitle = m.title || ''
       const series = (m.market_ticker || '').replace(/^KX/i, '').split('-')[0]
-      const label = series
+      const tickerLabel = series
         .replace(/([a-z])([A-Z])/g, '$1 $2')
         .replace(/([A-Z]+)/g, ' $1')
         .trim()
-      const oldP = typeof m.old_price === 'number' ? m.old_price : null
-      const newP = typeof m.new_price === 'number' ? m.new_price : null
-      const diff = m.price_diff || 0
+      const label = rawTitle || tickerLabel
+      const oldP = typeof m.prev_value === 'number' ? m.prev_value : null
+      const newP = typeof m.current_value === 'number' ? m.current_value : null
+      const diff = typeof m.delta_value === 'number' ? m.delta_value : 0
       const shiftPct = Math.abs(diff)
       const spread = (oldP != null && newP != null) ? Math.abs(newP - oldP) : null
+      const fmtVol = typeof m.current_volume === 'number'
+        ? (m.current_volume >= 1_000_000 ? `${(m.current_volume/1e6).toFixed(1)}M` : m.current_volume >= 1_000 ? `${(m.current_volume/1e3).toFixed(0)}K` : m.current_volume.toLocaleString('en-US'))
+        : null
+      const fmtOI = typeof m.current_open_interest === 'number'
+        ? (m.current_open_interest >= 1_000_000 ? `${(m.current_open_interest/1e6).toFixed(1)}M` : m.current_open_interest >= 1_000 ? `${(m.current_open_interest/1e3).toFixed(0)}K` : m.current_open_interest.toLocaleString('en-US'))
+        : null
       groups[cat].children.push({
         label,
         value: Math.max(1, shiftPct),
@@ -2551,9 +2588,9 @@ function VolIndexPage() {
         newPct: newP != null ? newP.toFixed(0) : null,
         ticker: m.market_ticker || null,
         spread: spread != null ? `${spread.toFixed(1)}¢` : null,
-        volume: null,
-        liquidity: null,
-        timeframe: '1h',
+        volume: fmtVol,
+        liquidity: fmtOI,
+        timeframe: '24h',
       })
     })
     return Object.entries(groups)

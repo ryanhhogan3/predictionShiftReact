@@ -1906,13 +1906,21 @@ h1 {
 }
 
 .hm-leg-label.quiet { color: rgba(255,255,255,0.35); }
-.hm-leg-label.hot   { color: #10b955; }
+.hm-leg-label.up    { color: #34d399; }
+.hm-leg-label.down  { color: #f87171; }
 
-.hm-leg-bar {
-  flex: 0 0 120px;
+.hm-leg-bar-down {
+  flex: 0 0 80px;
   height: 6px;
-  border-radius: 3px;
-  background: linear-gradient(90deg, #262a30 0%, #10b955 100%);
+  border-radius: 3px 0 0 3px;
+  background: linear-gradient(90deg, #c81e1e 0%, #2a2024 100%);
+}
+
+.hm-leg-bar-up {
+  flex: 0 0 80px;
+  height: 6px;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(90deg, #20282a 0%, #10b955 100%);
 }
 
 /* Provider tab toggle */
@@ -1949,5 +1957,39 @@ h1 {
   background: rgba(99,102,241,0.2);
   color: #a5b4fc;
   border: 1px solid rgba(99,102,241,0.3);
+}
+
+/* ── Mobile optimizations for treemap ──────────────────────────────────── */
+@media (max-width: 640px) {
+  .vol-heatmap-svg {
+    min-height: 280px;
+  }
+  .vol-heatmap-detail {
+    padding: 0.5rem 0.75rem;
+  }
+  .hm-detail-name {
+    font-size: 0.85rem;
+  }
+  .hm-detail-val {
+    font-size: 0.78rem;
+  }
+  .hm-detail-key {
+    font-size: 0.62rem;
+  }
+  .vol-heatmap-legend {
+    gap: 0.35rem;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .hm-leg-bar-down,
+  .hm-leg-bar-up {
+    flex: 0 0 50px;
+  }
+  .hm-leg-label {
+    font-size: 0.58rem;
+  }
+  .hm-breadcrumb {
+    font-size: 0.75rem;
+  }
 }
 
