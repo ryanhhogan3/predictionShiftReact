@@ -1786,6 +1786,37 @@ h1 {
   gap: 0.75rem;
 }
 
+/* Breadcrumb navigation */
+.hm-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  font-weight: 500;
+  padding: 0.35rem 0.1rem;
+}
+.hm-breadcrumb-item {
+  color: rgba(255,255,255,0.35);
+  letter-spacing: 0.01em;
+}
+.hm-breadcrumb-item.clickable {
+  color: rgba(124,106,247,0.85);
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.hm-breadcrumb-item.clickable:hover {
+  color: #7c6af7;
+  text-decoration: underline;
+}
+.hm-breadcrumb-item.active {
+  color: rgba(255,255,255,0.85);
+}
+.hm-breadcrumb-sep {
+  color: rgba(255,255,255,0.22);
+  font-size: 1rem;
+  line-height: 1;
+}
+
 .vol-heatmap-svg {
   width: 100%;
   height: auto;
@@ -1874,14 +1905,14 @@ h1 {
   letter-spacing: 0.05em;
 }
 
-.hm-leg-label.down { color: #f87171; }
-.hm-leg-label.up   { color: #34d399; }
+.hm-leg-label.quiet { color: rgba(255,255,255,0.35); }
+.hm-leg-label.hot   { color: #10b955; }
 
 .hm-leg-bar {
   flex: 0 0 120px;
   height: 6px;
   border-radius: 3px;
-  background: linear-gradient(90deg, #f87171 0%, #1e293b 50%, #34d399 100%);
+  background: linear-gradient(90deg, #262a30 0%, #10b955 100%);
 }
 
 /* Provider tab toggle */

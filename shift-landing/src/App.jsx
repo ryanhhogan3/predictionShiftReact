@@ -1801,64 +1801,130 @@ function tmLayout(items, x = 0, y = 0, w = 100, h = 100) {
 function lerpC(a, b, t) { return Math.round(a + (b - a) * t) }
 
 function heatColor(v) {
-  const c = Math.max(-1, Math.min(1, v))
-  if (c >= 0) return `rgb(${lerpC(30,52,c)},${lerpC(41,211,c)},${lerpC(59,153,c)})`
-  const t = -c
-  return `rgb(${lerpC(30,248,t)},${lerpC(41,113,t)},${lerpC(59,113,t)})`
+  // Magnitude-based: 0 = quiet (dark gray), 1 = hot (bright green)
+  const t = Math.max(0, Math.min(1, Math.abs(v)))
+  return `rgb(${lerpC(38,16,t)},${lerpC(42,185,t)},${lerpC(48,85,t)})`
 }
 
 function VolHeatmap({ groups, loading, error }) {
   const [hovered, setHovered] = useState(null) // { gi, ci }
+  const [drillCat, setDrillCat] = useState(null) // index into valid[] when drilled-in
 
   if (loading) return <div className="loading">Building heatmap…</div>
   if (error) return <div className="error">{error.message}</div>
   const valid = (groups || []).filter((g) => g.totalValue > 0)
   if (valid.length === 0) return <span className="muted">No sector data available yet.</span>
 
-  // Layout categories first
-  const catItems = valid.map((g) => ({ value: g.totalValue }))
-  const catRects = tmLayout(catItems, 0, 0, 100, 60)
-
-  const maxHeat = Math.max(
-    ...valid.flatMap((g) => g.children.map((c) => Math.abs(c.heat))),
-    0.001
-  )
+  // Use fixed scale so small shifts stay gray: 500 = only massive moves glow
+  const maxHeat = 500
   const GAP = 0.2
   const HEADER_H = 3.2
 
-  // Build renderable elements
-  const elements = []
-  catRects.forEach((cr, gi) => {
-    const g = valid[gi]
-    // Category background
-    elements.push({ type: 'cat-bg', x: cr.x, y: cr.y, w: cr.w, h: cr.h, gi, category: g.category })
-    // Layout children inside
-    const innerX = cr.x + GAP
-    const innerY = cr.y + HEADER_H
-    const innerW = Math.max(0, cr.w - GAP * 2)
-    const innerH = Math.max(0, cr.h - HEADER_H - GAP)
-    if (innerW > 0.5 && innerH > 0.5 && g.children.length > 0) {
-      const childRects = tmLayout(g.children, innerX, innerY, innerW, innerH)
+  // ── Drilled-in view: one category fills the whole map ──────────────
+  const isDrilled = drillCat != null && valid[drillCat]
+  const drilledGroup = isDrilled ? valid[drillCat] : null
+
+  const buildElements = () => {
+    if (isDrilled) {
+      // Full-viewport layout for the selected category's markets
+      const drillElements = []
+      const children = drilledGroup.children || []
+      if (children.length === 0) return drillElements
+      const childRects = tmLayout(children, 0, 0, 100, 60)
       childRects.forEach((rect, ci) => {
-        elements.push({
+        drillElements.push({
           type: 'market',
           x: rect.x, y: rect.y, w: rect.w, h: rect.h,
           label: rect.label,
           heat: rect.heat,
           heatLabel: rect.heatLabel,
           value: rect.value,
-          gi, ci,
-          norm: (rect.heat ?? 0) / maxHeat,
+          oldPct: rect.oldPct,
+          newPct: rect.newPct,
+          ticker: rect.ticker,
+          spread: rect.spread,
+          volume: rect.volume,
+          liquidity: rect.liquidity,
+          timeframe: rect.timeframe,
+          gi: drillCat, ci,
+          norm: Math.abs(rect.heat ?? 0) / maxHeat,
         })
       })
+      return drillElements
     }
-  })
 
-  const hoveredChild = hovered ? valid[hovered.gi]?.children[hovered.ci] : null
+    // ── Normal overview ──────────────────────────────────────────────
+    const catItems = valid.map((g) => ({ value: g.totalValue }))
+    const catRects = tmLayout(catItems, 0, 0, 100, 60)
+    const els = []
+    catRects.forEach((cr, gi) => {
+      const g = valid[gi]
+      els.push({ type: 'cat-bg', x: cr.x, y: cr.y, w: cr.w, h: cr.h, gi, category: g.category })
+      const innerX = cr.x + GAP
+      const innerY = cr.y + HEADER_H
+      const innerW = Math.max(0, cr.w - GAP * 2)
+      const innerH = Math.max(0, cr.h - HEADER_H - GAP)
+      if (innerW > 0.5 && innerH > 0.5 && g.children.length > 0) {
+        const childRects = tmLayout(g.children, innerX, innerY, innerW, innerH)
+        childRects.forEach((rect, ci) => {
+          els.push({
+            type: 'market',
+            x: rect.x, y: rect.y, w: rect.w, h: rect.h,
+            label: rect.label,
+            heat: rect.heat,
+            heatLabel: rect.heatLabel,
+            value: rect.value,
+            oldPct: rect.oldPct,
+            newPct: rect.newPct,
+            ticker: rect.ticker,
+            spread: rect.spread,
+            volume: rect.volume,
+            liquidity: rect.liquidity,
+            timeframe: rect.timeframe,
+            gi, ci,
+            norm: Math.abs(rect.heat ?? 0) / maxHeat,
+          })
+        })
+      }
+    })
+    return els
+  }
+
+  const elements = buildElements()
+
+  const hoveredEl = hovered ? elements.find((e) => e.type === 'market' && e.gi === hovered.gi && e.ci === hovered.ci) : null
+  const hoveredChild = hoveredEl || null
   const hoveredCat = hovered ? valid[hovered.gi]?.category : null
+
+  const handleTileClick = (el) => {
+    if (isDrilled) return // already drilled in, do nothing on tile click
+    setDrillCat(el.gi)
+    setHovered(null)
+  }
+
+  const handleCatClick = (gi) => {
+    setDrillCat(gi)
+    setHovered(null)
+  }
 
   return (
     <div className="vol-heatmap-wrap">
+      {/* Breadcrumb nav */}
+      <div className="hm-breadcrumb">
+        <span
+          className={`hm-breadcrumb-item${isDrilled ? ' clickable' : ' active'}`}
+          onClick={isDrilled ? () => { setDrillCat(null); setHovered(null) } : undefined}
+        >
+          Whole Market
+        </span>
+        {isDrilled && (
+          <>
+            <span className="hm-breadcrumb-sep">›</span>
+            <span className="hm-breadcrumb-item active">{drilledGroup.category}</span>
+          </>
+        )}
+      </div>
+
       <svg viewBox="0 0 100 60" className="vol-heatmap-svg" preserveAspectRatio="xMidYMid meet">
         {elements.map((el, i) => {
           if (el.type === 'cat-bg') {
@@ -1870,7 +1936,7 @@ function VolHeatmap({ groups, loading, error }) {
             const fs = Math.min(2, Math.max(1, rw / 14))
             const showLabel = rw > 5
             return (
-              <g key={`cat-${i}`}>
+              <g key={`cat-${i}`} style={{ cursor: 'pointer' }} onClick={() => handleCatClick(el.gi)}>
                 <rect
                   x={rx} y={ry} width={rw} height={rh}
                   fill="rgba(255,255,255,0.04)"
@@ -1893,7 +1959,7 @@ function VolHeatmap({ groups, loading, error }) {
             )
           }
           if (el.type === 'market') {
-            const norm = Math.max(-1, Math.min(1, el.norm))
+            const norm = Math.max(0, Math.min(1, el.norm))
             const fill = heatColor(norm)
             const pad = 0.12
             const rx = el.x + pad
@@ -1902,15 +1968,29 @@ function VolHeatmap({ groups, loading, error }) {
             const rh = Math.max(0, el.h - pad * 2)
             if (rw < 0.25 || rh < 0.25) return null
             const area = rw * rh
-            const fs = Math.max(0.7, Math.min(2.6, rw / 6.5))
-            const subFs = fs * 0.72
-            const showLabel = area > 3
-            const showHeat = area > 8 && el.heatLabel
-            const maxChars = Math.max(2, Math.floor(rw / fs * 1.5))
+            // Drilled-in tiles are much larger, so we can always show more info
+            const fs = isDrilled
+              ? Math.max(1, Math.min(3, rw / 5))
+              : Math.max(0.7, Math.min(2.6, rw / 6.5))
+            const subFs = fs * 0.68
+            const showLabel = isDrilled ? area > 1 : area > 3
+            const showHeat = isDrilled ? area > 4 : (area > 8 && el.heatLabel)
+            // In drill mode, show extra detail lines (old→new, ticker, volume)
+            const showExtra = isDrilled && area > 12
+            const maxChars = isDrilled
+              ? Math.max(4, Math.floor(rw / fs * 2))
+              : Math.max(2, Math.floor(rw / fs * 1.5))
             const label = (el.label || '').length > maxChars
               ? (el.label || '').slice(0, maxChars - 1) + '…'
               : (el.label || '')
             const isHov = hovered && hovered.gi === el.gi && hovered.ci === el.ci
+
+            // Count how many text lines we'll draw for vertical centering
+            const lineCount = 1 + (showHeat ? 1 : 0) + (showExtra ? 1 : 0) + (showExtra && el.volume ? 1 : 0)
+            const lineH = fs * 1.15
+            const blockH = lineCount * lineH
+            const startY = ry + rh / 2 - blockH / 2 + fs * 0.4
+
             return (
               <g key={`mk-${i}`}>
                 <rect
@@ -1922,12 +2002,13 @@ function VolHeatmap({ groups, loading, error }) {
                   style={{ cursor: 'pointer', transition: 'stroke 0.12s' }}
                   onMouseEnter={() => setHovered({ gi: el.gi, ci: el.ci })}
                   onMouseLeave={() => setHovered(null)}
+                  onClick={() => handleTileClick(el)}
                 />
                 {showLabel && (
                   <>
                     <text
                       x={rx + rw / 2}
-                      y={ry + rh / 2 - (showHeat ? subFs * 0.55 : 0)}
+                      y={startY}
                       textAnchor="middle" dominantBaseline="middle"
                       fontSize={fs} fontWeight="700"
                       fill="rgba(255,255,255,0.92)"
@@ -1938,13 +2019,37 @@ function VolHeatmap({ groups, loading, error }) {
                     {showHeat && (
                       <text
                         x={rx + rw / 2}
-                        y={ry + rh / 2 + fs * 0.65}
+                        y={startY + lineH}
                         textAnchor="middle" dominantBaseline="middle"
                         fontSize={subFs} fontWeight="600"
-                        fill={norm >= 0 ? 'rgba(52,211,153,0.9)' : 'rgba(248,113,113,0.9)'}
+                        fill={norm > 0.5 ? 'rgba(30,30,50,0.95)' : 'rgba(255,255,255,0.85)'}
                         style={{ pointerEvents: 'none', userSelect: 'none' }}
                       >
                         {el.heatLabel}
+                      </text>
+                    )}
+                    {showExtra && el.oldPct != null && el.newPct != null && (
+                      <text
+                        x={rx + rw / 2}
+                        y={startY + lineH * 2}
+                        textAnchor="middle" dominantBaseline="middle"
+                        fontSize={subFs * 0.9} fontWeight="500"
+                        fill="rgba(255,255,255,0.6)"
+                        style={{ pointerEvents: 'none', userSelect: 'none' }}
+                      >
+                        {el.oldPct}% → {el.newPct}%
+                      </text>
+                    )}
+                    {showExtra && el.volume != null && (
+                      <text
+                        x={rx + rw / 2}
+                        y={startY + lineH * (el.oldPct != null ? 3 : 2)}
+                        textAnchor="middle" dominantBaseline="middle"
+                        fontSize={subFs * 0.8} fontWeight="400"
+                        fill="rgba(255,255,255,0.45)"
+                        style={{ pointerEvents: 'none', userSelect: 'none' }}
+                      >
+                        Vol: {el.volume}
                       </text>
                     )}
                   </>
@@ -1961,24 +2066,60 @@ function VolHeatmap({ groups, loading, error }) {
         {hoveredChild ? (
           <>
             <div className="hm-detail-name">{hoveredChild.label}</div>
-            <div className="hm-detail-sub">{hoveredCat}</div>
+            <div className="hm-detail-sub">{hoveredCat}{hoveredChild.ticker ? ` · ${hoveredChild.ticker}` : ''}</div>
             <div className="hm-detail-grid">
-              <span className="hm-detail-key">Move</span>
+              {hoveredChild.oldPct != null && (
+                <>
+                  <span className="hm-detail-key">Was</span>
+                  <span className="hm-detail-val">{hoveredChild.oldPct}%</span>
+                </>
+              )}
+              {hoveredChild.newPct != null && (
+                <>
+                  <span className="hm-detail-key">Now</span>
+                  <span className="hm-detail-val">{hoveredChild.newPct}%</span>
+                </>
+              )}
+              <span className="hm-detail-key">Shift</span>
               <span className={`hm-detail-val ${(hoveredChild.heat ?? 0) >= 0 ? 'tip-up' : 'tip-down'}`}>
                 {hoveredChild.heatLabel || '—'}
               </span>
+              {hoveredChild.spread != null && (
+                <>
+                  <span className="hm-detail-key">Spread</span>
+                  <span className="hm-detail-val">{hoveredChild.spread}</span>
+                </>
+              )}
+              {hoveredChild.volume != null && (
+                <>
+                  <span className="hm-detail-key">Volume</span>
+                  <span className="hm-detail-val">{hoveredChild.volume}</span>
+                </>
+              )}
+              {hoveredChild.liquidity != null && (
+                <>
+                  <span className="hm-detail-key">Liquidity</span>
+                  <span className="hm-detail-val">{hoveredChild.liquidity}</span>
+                </>
+              )}
+              {hoveredChild.timeframe != null && (
+                <>
+                  <span className="hm-detail-key">Window</span>
+                  <span className="hm-detail-val">{hoveredChild.timeframe}</span>
+                </>
+              )}
             </div>
           </>
         ) : (
-          <span className="hm-detail-hint">Hover a tile for details</span>
+          <span className="hm-detail-hint">{isDrilled ? 'Hover a tile for details' : 'Click a category to drill in'}</span>
         )}
       </div>
 
       {/* Legend */}
       <div className="vol-heatmap-legend">
-        <span className="hm-leg-label down">▼ Falling</span>
+        <span className="hm-leg-label quiet">Quiet</span>
         <div className="hm-leg-bar" />
-        <span className="hm-leg-label up">▲ Rising</span>
+        <span className="hm-leg-label hot">🔥 Biggest Shifts</span>
       </div>
     </div>
   )
@@ -2396,11 +2537,23 @@ function VolIndexPage() {
         .replace(/([a-z])([A-Z])/g, '$1 $2')
         .replace(/([A-Z]+)/g, ' $1')
         .trim()
+      const oldP = typeof m.old_price === 'number' ? m.old_price : null
+      const newP = typeof m.new_price === 'number' ? m.new_price : null
+      const diff = m.price_diff || 0
+      const shiftPct = Math.abs(diff)
+      const spread = (oldP != null && newP != null) ? Math.abs(newP - oldP) : null
       groups[cat].children.push({
         label,
-        value: Math.max(1, Math.abs(m.price_diff || 0)),
-        heat: m.price_diff || 0,
-        heatLabel: `${(m.price_diff || 0) >= 0 ? '+' : ''}${(m.price_diff || 0).toFixed(1)}¢`,
+        value: Math.max(1, shiftPct),
+        heat: diff,
+        heatLabel: `${oldP != null ? oldP.toFixed(0) : '?'}→${newP != null ? newP.toFixed(0) : '?'}¢`,
+        oldPct: oldP != null ? oldP.toFixed(0) : null,
+        newPct: newP != null ? newP.toFixed(0) : null,
+        ticker: m.market_ticker || null,
+        spread: spread != null ? `${spread.toFixed(1)}¢` : null,
+        volume: null,
+        liquidity: null,
+        timeframe: '1h',
       })
     })
     return Object.entries(groups)
@@ -2438,14 +2591,26 @@ function VolIndexPage() {
       const cat = polyCategory(row.question ?? row.title ?? '')
       if (!groups[cat]) groups[cat] = { children: [] }
       const vol = typeof row.volume === 'number' ? row.volume : 1
+      const liq = typeof row.liquidity === 'number' ? row.liquidity : null
       const diff = typeof row.price_diff === 'number' ? row.price_diff * 100 : 0
+      const oldP = typeof row.price_prev === 'number' ? (row.price_prev * 100).toFixed(0) : null
+      const newP = typeof row.price_now === 'number' ? (row.price_now * 100).toFixed(0) : null
       const q = (row.question ?? row.title ?? '').replace(/^Will\s+/i, '').replace(/\?$/, '')
       const label = q.length > 35 ? q.slice(0, 33) + '…' : q
+      const fmtVol = vol >= 1_000_000 ? `$${(vol/1e6).toFixed(1)}M` : vol >= 1_000 ? `$${(vol/1e3).toFixed(0)}K` : `$${vol.toFixed(0)}`
+      const fmtLiq = liq != null ? (liq >= 1_000_000 ? `$${(liq/1e6).toFixed(1)}M` : liq >= 1_000 ? `$${(liq/1e3).toFixed(0)}K` : `$${liq.toFixed(0)}`) : null
       groups[cat].children.push({
         label,
         value: Math.max(1, vol),
         heat: diff,
-        heatLabel: `${diff >= 0 ? '+' : ''}${diff.toFixed(1)}pp`,
+        heatLabel: `${oldP ?? '?'}→${newP ?? '?'}%`,
+        oldPct: oldP,
+        newPct: newP,
+        ticker: null,
+        spread: (oldP != null && newP != null) ? `${Math.abs(Number(newP) - Number(oldP)).toFixed(0)}pp` : null,
+        volume: fmtVol,
+        liquidity: fmtLiq,
+        timeframe: '24h',
       })
     })
     return Object.entries(groups)
@@ -2474,13 +2639,13 @@ function VolIndexPage() {
       </p>
       <h2>Global Volatility Index</h2>
 
-      {/* ═══ SECTOR VOLATILITY HEATMAP ═══ */}
+      {/* ═══ PROBABILITY SHIFT MAP ═══ */}
       <div className="panel" style={{ marginTop: '1.5rem' }}>
         <div className="panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
           <div>
-            <div className="panel-title">Sector Volatility Heatmap</div>
+            <div className="panel-title">Probability Shift Map</div>
             <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.35)', marginTop: '0.15rem' }}>
-              Tile size = price movement &nbsp;·&nbsp; Color = direction
+              Where consensus is moving right now &nbsp;·&nbsp; Brighter = bigger shift
             </div>
           </div>
           <div className="hm-provider-tabs">
@@ -2510,8 +2675,8 @@ function VolIndexPage() {
           />
           <p className="panel-methodology" style={{ marginTop: '0.75rem' }}>
             {hmProvider === 'kalshi'
-              ? 'Categories are derived from market ticker prefixes. Each inner tile is an individual market mover. Tile size reflects the magnitude of price change; color (green = rising, red = falling) shows direction.'
-              : 'Categories are derived from keyword classification of market questions. Each inner tile is a market with a significant mid-price move in the last 24h. Tile size reflects traded volume; color shows price direction.'}
+              ? 'Each tile is a prediction market where probability shifted significantly. The label shows the old → new probability (e.g. 4→99¢ = went from 4% to 99% likely). Tile size = magnitude of shift. Categories are auto-detected from market tickers.'
+              : 'Each tile is a Polymarket question where mid-price moved significantly in 24h. The label shows old → new probability. Tile size = traded volume. Categories are keyword-classified from question text.'}
           </p>
         </div>
       </div>
