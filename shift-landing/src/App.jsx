@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Routes, Route, Link, NavLink, useLocation } from 'react-router-dom'
 import './App.css'
 
@@ -373,6 +373,255 @@ function LandingPage() {
   )
 }
 
+// ─── Guided Tour Component ───────────────────────────────────────────────────
+
+function GuidedTour({ tourKey, steps }) {
+  const [active, setActive] = useState(false)
+  const [step, setStep] = useState(0)
+  const [rect, setRect] = useState(null) // viewport-relative rect of target
+  const rafRef = useRef(null)
+  const scrolledRef = useRef(false)
+
+  // Show tour on first visit (wait for data to render)
+  useEffect(() => {
+    const seen = localStorage.getItem(`tour_${tourKey}`)
+    if (!seen) {
+      const timer = setTimeout(() => setActive(true), 2500)
+      return () => clearTimeout(timer)
+    }
+  }, [tourKey])
+
+  // Track target element position (viewport-relative, no scroll offset)
+  useEffect(() => {
+    if (!active) return
+    scrolledRef.current = false
+
+    const track = () => {
+      const selector = steps[step]?.target
+      if (!selector) { setRect(null); return }
+      const el = document.querySelector(selector)
+      if (!el) {
+        setRect(null)
+        rafRef.current = requestAnimationFrame(track)
+        return
+      }
+      const r = el.getBoundingClientRect()
+      setRect({ top: r.top, left: r.left, width: r.width, height: r.height })
+
+      // Scroll into view once per step
+      if (!scrolledRef.current) {
+        scrolledRef.current = true
+        const viewH = window.innerHeight
+        if (r.top < 80 || r.bottom > viewH - 80) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
+      }
+
+      rafRef.current = requestAnimationFrame(track)
+    }
+    rafRef.current = requestAnimationFrame(track)
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }
+  }, [active, step, steps])
+
+  const finish = useCallback(() => {
+    setActive(false)
+    localStorage.setItem(`tour_${tourKey}`, '1')
+  }, [tourKey])
+
+  const next = useCallback(() => {
+    if (step < steps.length - 1) {
+      scrolledRef.current = false
+      setStep(s => s + 1)
+    } else {
+      finish()
+    }
+  }, [step, steps.length, finish])
+
+  const prev = useCallback(() => {
+    if (step > 0) {
+      scrolledRef.current = false
+      setStep(s => s - 1)
+    }
+  }, [step])
+
+  // Keyboard support
+  useEffect(() => {
+    if (!active) return
+    const onKey = (e) => {
+      if (e.key === 'Escape') finish()
+      if (e.key === 'ArrowRight' || e.key === 'Enter') next()
+      if (e.key === 'ArrowLeft') prev()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [active, next, prev, finish])
+
+  if (!active || !steps.length) return null
+
+  const currentStep = steps[step]
+  const isLast = step === steps.length - 1
+  const hasTarget = rect !== null
+
+  // Tooltip positioning (viewport-relative, rendered in fixed overlay)
+  const tooltipStyle = {}
+  if (hasTarget) {
+    const viewW = window.innerWidth
+    const viewH = window.innerHeight
+    const tw = Math.min(340, viewW - 32)
+    let tLeft = rect.left + rect.width / 2 - tw / 2
+    if (tLeft < 16) tLeft = 16
+    if (tLeft + tw > viewW - 16) tLeft = viewW - tw - 16
+    tooltipStyle.left = `${tLeft}px`
+    tooltipStyle.width = `${tw}px`
+
+    const spaceBelow = viewH - rect.top - rect.height
+    if (spaceBelow > 220) {
+      tooltipStyle.top = `${rect.top + rect.height + 14}px`
+    } else {
+      tooltipStyle.top = `${rect.top - 14}px`
+      tooltipStyle.transform = 'translateY(-100%)'
+    }
+  } else {
+    tooltipStyle.top = '50%'
+    tooltipStyle.left = '50%'
+    tooltipStyle.transform = 'translate(-50%, -50%)'
+    tooltipStyle.width = '340px'
+  }
+
+  // Spotlight clip path (viewport coords)
+  const clipPath = hasTarget
+    ? `polygon(
+        0% 0%, 0% 100%, 100% 100%, 100% 0%, 0% 0%,
+        ${rect.left - 8}px ${rect.top - 8}px,
+        ${rect.left - 8}px ${rect.top + rect.height + 8}px,
+        ${rect.left + rect.width + 8}px ${rect.top + rect.height + 8}px,
+        ${rect.left + rect.width + 8}px ${rect.top - 8}px,
+        ${rect.left - 8}px ${rect.top - 8}px
+      )`
+    : undefined
+
+  return (
+    <>
+      {/* Overlay backdrop with spotlight cutout */}
+      <div
+        className="guided-tour-backdrop"
+        style={hasTarget ? { clipPath } : undefined}
+        onClick={finish}
+      />
+
+      {/* Highlight ring around target */}
+      {hasTarget && (
+        <div
+          className="guided-tour-highlight"
+          style={{
+            top: `${rect.top - 8}px`,
+            left: `${rect.left - 8}px`,
+            width: `${rect.width + 16}px`,
+            height: `${rect.height + 16}px`,
+          }}
+        />
+      )}
+
+      {/* Tooltip card */}
+      <div className="guided-tour-tooltip" style={tooltipStyle}>
+        <div className="tour-step-counter">
+          Step {step + 1} of {steps.length}
+        </div>
+        <div className="tour-title">{currentStep.title}</div>
+        <div className="tour-body">{currentStep.body}</div>
+        <div className="tour-actions">
+          <button type="button" className="tour-btn tour-skip" onClick={finish}>
+            Skip tour
+          </button>
+          <div className="tour-nav">
+            {step > 0 && (
+              <button type="button" className="tour-btn tour-prev" onClick={prev}>
+                ← Back
+              </button>
+            )}
+            <button type="button" className="tour-btn tour-next" onClick={next}>
+              {isLast ? 'Done ✓' : 'Next →'}
+            </button>
+          </div>
+        </div>
+        {/* Step dots */}
+        <div className="tour-dots">
+          {steps.map((_, i) => (
+            <span key={i} className={`tour-dot${i === step ? ' active' : ''}${i < step ? ' done' : ''}`} />
+          ))}
+        </div>
+      </div>
+    </>
+  )
+}
+
+// Tour step definitions
+const KALSHI_TOUR_STEPS = [
+  {
+    target: '[data-tour="kalshi-hero-stats"]',
+    title: 'Market Overview',
+    body: 'These cards show aggregate volume, open interest, and wide spreads over the past 24 hours and 30 days. Watch the delta arrows to see how activity is changing hour-over-hour.',
+  },
+  {
+    target: '[data-tour="kalshi-movers"]',
+    title: 'Market Movers',
+    body: 'The top 6 markets with the biggest price shifts in the last hour. Green = rising, red = falling. Great for spotting where money is flowing right now.',
+  },
+  {
+    target: '[data-tour="kalshi-24h-changes"]',
+    title: '24h Changes Table',
+    body: 'A sortable table showing the biggest metric changes over the past 24 hours. Click column headers to sort by volume, spread, or price delta.',
+  },
+  {
+    target: '[data-tour="kalshi-shift-index"]',
+    title: 'Market Shift Index',
+    body: 'A composite score combining volume, open interest, and breadth changes. Spikes indicate periods of unusual market activity — useful for timing your research.',
+  },
+  {
+    target: '[data-tour="kalshi-events-spreads"]',
+    title: 'Events & Spread Blowouts',
+    body: 'Left panel ranks events by traded volume. Right panel highlights markets where the bid-ask spread widened or tightened dramatically — a signal of liquidity shifts.',
+  },
+  {
+    target: '[data-tour="kalshi-expiring"]',
+    title: 'Expiring Soon',
+    body: 'Markets nearing expiration. Urgent ones (< 24h) are highlighted. These often see the most volatile final price moves as outcomes become certain.',
+  },
+]
+
+const POLY_TOUR_STEPS = [
+  {
+    target: '[data-tour="poly-hero-stats"]',
+    title: 'Market Overview',
+    body: 'Volume and liquidity in USDC over 24h and 30d, plus the real-time Volatility Index. The delta arrows show how each metric changed in the latest snapshot.',
+  },
+  {
+    target: '[data-tour="poly-movers"]',
+    title: 'Market Pulse',
+    body: 'The 6 markets with the biggest mid-price moves in the last 24 hours. Each card shows the direction, magnitude, and the old → new probability.',
+  },
+  {
+    target: '[data-tour="poly-24h-changes"]',
+    title: '24h Changes Table',
+    body: 'Drill into the biggest movers by volume, liquidity, or YES price. Sortable columns let you find markets with the most significant recent activity.',
+  },
+  {
+    target: '[data-tour="poly-vol-index"]',
+    title: 'Realized Vol Index',
+    body: 'Annualized realized volatility across all Polymarket contracts. Higher readings mean more aggressive repricing — a proxy for market uncertainty.',
+  },
+  {
+    target: '[data-tour="poly-events"]',
+    title: 'Top Events',
+    body: 'Events ranked by volume (left) and liquidity (right). Use this to find where the most money is concentrated and where deep order books exist.',
+  },
+  {
+    target: '[data-tour="poly-expiring"]',
+    title: 'Expiring Soon',
+    body: 'Markets expiring within 48 hours. The YES probability bar and countdown help you assess near-term resolution opportunities.',
+  },
+]
+
 function Dashboard() {
   const [activeCategory, setActiveCategory] = useState('Trending')
   const eventsByVolume = useApi('/top-events-volume')
@@ -442,6 +691,7 @@ function Dashboard() {
 
   return (
     <div className="dashboard kalshi-dash">
+      <GuidedTour tourKey="kalshi" steps={KALSHI_TOUR_STEPS} />
       <p className="seo-blurb">
         Market Shift Index hourly deltas, real-time market movers, top events by traded volume, spread blowouts, expiring contracts, and global order-flow metrics across prediction markets.
       </p>
@@ -470,7 +720,7 @@ function Dashboard() {
 
       {/* ═══ HERO STATS BAR ═══ */}
       {(heroVol24h !== null || globalDeltas.loading) && (
-        <div className="poly-stats-bar" style={{ marginTop: '1.5rem' }}>
+        <div className="poly-stats-bar" data-tour="kalshi-hero-stats" style={{ marginTop: '1.5rem' }}>
           {globalDeltas.loading && <div className="loading">Loading stats…</div>}
           {!globalDeltas.loading && (
             <>
@@ -526,7 +776,7 @@ function Dashboard() {
 
       {/* ═══ MARKET MOVERS — Leaderboard Feed ═══ */}
       {(Array.isArray(marketMovers.data) && marketMovers.data.length > 0) && (
-        <div className="movers-section">
+        <div className="movers-section" data-tour="kalshi-movers">
           <div className="movers-section-header">
             <span className="movers-live-dot" />
             <span className="movers-section-title">Market Movers</span>
@@ -572,10 +822,12 @@ function Dashboard() {
         </div>
       )}
 
-      <Last24hChangesPanel defaultProvider="kalshi" />
+      <div data-tour="kalshi-24h-changes">
+        <Last24hChangesPanel defaultProvider="kalshi" />
+      </div>
 
       {/* ═══ MARKET SHIFT INDEX ═══ */}
-      <div className="panel poly-vol-panel" style={{ marginTop: '1.5rem' }}>
+      <div className="panel poly-vol-panel" data-tour="kalshi-shift-index" style={{ marginTop: '1.5rem' }}>
         <div className="panel-header" style={{ borderBottom: 'none', paddingBottom: 0 }}>
           <div className="panel-title">Market Shift Index</div>
           {latestIndex !== null && (
@@ -610,7 +862,7 @@ function Dashboard() {
       </div>
 
       {/* ═══ TOP EVENTS + SPREAD BLOWOUTS — side by side ═══ */}
-      <div className="poly-events-duo">
+      <div className="poly-events-duo" data-tour="kalshi-events-spreads">
         {/* Top Events by Volume */}
         <div className="panel poly-events-panel">
           <div className="panel-header">
@@ -680,7 +932,7 @@ function Dashboard() {
 
       {/* ═══ EXPIRING SOON — countdown cards ═══ */}
       {Array.isArray(expiringSoon.data) && expiringSoon.data.length > 0 && (
-        <div className="poly-expiring-section">
+        <div className="poly-expiring-section" data-tour="kalshi-expiring">
           <h3 className="poly-section-title">⏱ Expiring Soon</h3>
           <div className="poly-expiring-grid">
             {expiringSoon.data.slice(0, 8).map((row, idx) => {
@@ -1221,6 +1473,7 @@ function PolyDashboard() {
 
   return (
     <div className="dashboard poly-dash">
+      <GuidedTour tourKey="poly" steps={POLY_TOUR_STEPS} />
       <p className="seo-blurb">
         Polymarket real-time analytics: vol index, market mid-moves, top events
         by volume and liquidity, expiring markets, and global USDC flow metrics.
@@ -1249,7 +1502,7 @@ function PolyDashboard() {
       </nav>
 
       {/* ═══ HERO STATS BAR ═══ */}
-      <div className="poly-stats-bar">
+      <div className="poly-stats-bar" data-tour="poly-hero-stats">
         {(globalDeltasFull.loading && globalSnapshot.loading) && <div className="loading">Loading stats…</div>}
         {(!globalDeltasFull.loading || !globalSnapshot.loading) && (
           <>
@@ -1319,7 +1572,7 @@ function PolyDashboard() {
 
       {/* ═══ MARKET PULSE — Leaderboard Feed ═══ */}
       {(Array.isArray(midMoves.data) && midMoves.data.length > 0) && (
-        <div className="movers-section">
+        <div className="movers-section" data-tour="poly-movers">
           <div className="movers-section-header">
             <span className="movers-live-dot" />
             <span className="movers-section-title">Market Pulse</span>
@@ -1358,10 +1611,12 @@ function PolyDashboard() {
         </div>
       )}
 
-      <Last24hChangesPanel defaultProvider="poly" />
+      <div data-tour="poly-24h-changes">
+        <Last24hChangesPanel defaultProvider="poly" />
+      </div>
 
       {/* ═══ VOLATILITY INDEX ═══ */}
-      <div className="panel poly-vol-panel" style={{ marginTop: '1.5rem' }}>
+      <div className="panel poly-vol-panel" data-tour="poly-vol-index" style={{ marginTop: '1.5rem' }}>
         <div className="panel-header" style={{ borderBottom: 'none', paddingBottom: 0 }}>
           <div className="panel-title">Realized Vol Index</div>
           {latestVolIndex !== null && (
@@ -1398,7 +1653,7 @@ function PolyDashboard() {
       </div>
 
       {/* ═══ TOP EVENTS — side by side ═══ */}
-      <div className="poly-events-duo">
+      <div className="poly-events-duo" data-tour="poly-events">
         <div className="panel poly-events-panel">
           <div className="panel-header">
             <div className="panel-title">Top Events by Volume</div>
@@ -1454,7 +1709,7 @@ function PolyDashboard() {
 
       {/* ═══ EXPIRING SOON — countdown cards ═══ */}
       {Array.isArray(expiringSoon.data) && expiringSoon.data.length > 0 && (
-        <div className="poly-expiring-section">
+        <div className="poly-expiring-section" data-tour="poly-expiring">
           <h3 className="poly-section-title">⏱ Expiring Soon</h3>
           <div className="poly-expiring-grid">
             {expiringSoon.data.slice(0, 8).map((row, idx) => {
