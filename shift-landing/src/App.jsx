@@ -1807,119 +1807,166 @@ function heatColor(v) {
   return `rgb(${lerpC(30,248,t)},${lerpC(41,113,t)},${lerpC(59,113,t)})`
 }
 
-function VolHeatmap({ tiles, loading, error, sizeLabel = 'Volume', heatLabel = 'Avg Price Shift' }) {
-  const [hovered, setHovered] = useState(null)
+function VolHeatmap({ groups, loading, error }) {
+  const [hovered, setHovered] = useState(null) // { gi, ci }
 
   if (loading) return <div className="loading">Building heatmap…</div>
   if (error) return <div className="error">{error.message}</div>
-  const valid = (tiles || []).filter((t) => t.value > 0)
+  const valid = (groups || []).filter((g) => g.totalValue > 0)
   if (valid.length === 0) return <span className="muted">No sector data available yet.</span>
 
-  const rects = tmLayout(valid)
-  const maxHeat = Math.max(...valid.map((t) => Math.abs(t.heat ?? 0)), 0.001)
-  const PAD = 0.4
+  // Layout categories first
+  const catItems = valid.map((g) => ({ value: g.totalValue }))
+  const catRects = tmLayout(catItems, 0, 0, 100, 60)
 
-  const hoveredRect = hovered !== null ? rects[hovered] : null
+  const maxHeat = Math.max(
+    ...valid.flatMap((g) => g.children.map((c) => Math.abs(c.heat))),
+    0.001
+  )
+  const GAP = 0.2
+  const HEADER_H = 3.2
+
+  // Build renderable elements
+  const elements = []
+  catRects.forEach((cr, gi) => {
+    const g = valid[gi]
+    // Category background
+    elements.push({ type: 'cat-bg', x: cr.x, y: cr.y, w: cr.w, h: cr.h, gi, category: g.category })
+    // Layout children inside
+    const innerX = cr.x + GAP
+    const innerY = cr.y + HEADER_H
+    const innerW = Math.max(0, cr.w - GAP * 2)
+    const innerH = Math.max(0, cr.h - HEADER_H - GAP)
+    if (innerW > 0.5 && innerH > 0.5 && g.children.length > 0) {
+      const childRects = tmLayout(g.children, innerX, innerY, innerW, innerH)
+      childRects.forEach((rect, ci) => {
+        elements.push({
+          type: 'market',
+          x: rect.x, y: rect.y, w: rect.w, h: rect.h,
+          label: rect.label,
+          heat: rect.heat,
+          heatLabel: rect.heatLabel,
+          value: rect.value,
+          gi, ci,
+          norm: (rect.heat ?? 0) / maxHeat,
+        })
+      })
+    }
+  })
+
+  const hoveredChild = hovered ? valid[hovered.gi]?.children[hovered.ci] : null
+  const hoveredCat = hovered ? valid[hovered.gi]?.category : null
 
   return (
     <div className="vol-heatmap-wrap">
-      <svg
-        viewBox="0 0 100 60"
-        className="vol-heatmap-svg"
-        preserveAspectRatio="xMidYMid meet"
-      >
-        {rects.map((rect, i) => {
-          const norm = (rect.heat ?? 0) / maxHeat
-          const fill = heatColor(norm)
-          const rx = rect.x + PAD / 2
-          const ry = rect.y + PAD / 2
-          const rw = Math.max(0, rect.w - PAD)
-          const rh = Math.max(0, rect.h - PAD)
-          if (rw < 0.5 || rh < 0.5) return null
-          const area = rw * rh
-          const fs = Math.max(1.1, Math.min(3.8, rw / 7))
-          const subFs = fs * 0.72
-          const showLabel = area > 8
-          const showSub = area > 22 && rect.heatLabel
-          const maxChars = Math.max(2, Math.floor(rw / fs * 1.6))
-          const labelText = (rect.label || '').length > maxChars
-            ? (rect.label || '').slice(0, maxChars - 1) + '…'
-            : (rect.label || '')
-          const isHov = hovered === i
-          return (
-            <g key={rect.label + i}>
-              <rect
-                x={rx} y={ry} width={rw} height={rh}
-                fill={fill}
-                rx={0.5}
-                stroke={isHov ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)'}
-                strokeWidth={isHov ? 0.35 : 0.15}
-                style={{ cursor: 'pointer', transition: 'stroke 0.12s, stroke-width 0.12s' }}
-                onMouseEnter={() => setHovered(i)}
-                onMouseLeave={() => setHovered(null)}
-              />
-              {showLabel && (
-                <>
+      <svg viewBox="0 0 100 60" className="vol-heatmap-svg" preserveAspectRatio="xMidYMid meet">
+        {elements.map((el, i) => {
+          if (el.type === 'cat-bg') {
+            const rx = el.x + GAP / 2
+            const ry = el.y + GAP / 2
+            const rw = Math.max(0, el.w - GAP)
+            const rh = Math.max(0, el.h - GAP)
+            if (rw < 1 || rh < 1) return null
+            const fs = Math.min(2, Math.max(1, rw / 14))
+            const showLabel = rw > 5
+            return (
+              <g key={`cat-${i}`}>
+                <rect
+                  x={rx} y={ry} width={rw} height={rh}
+                  fill="rgba(255,255,255,0.04)"
+                  stroke="rgba(255,255,255,0.12)"
+                  strokeWidth={0.15}
+                  rx={0.4}
+                />
+                {showLabel && (
                   <text
-                    x={rx + rw / 2}
-                    y={ry + rh / 2 - (showSub ? subFs * 0.65 : 0)}
-                    textAnchor="middle"
-                    dominantBaseline="middle"
+                    x={rx + 0.6} y={ry + HEADER_H * 0.62}
                     fontSize={fs}
-                    fontWeight="700"
-                    fill="rgba(255,255,255,0.93)"
-                    style={{ pointerEvents: 'none', userSelect: 'none' }}
+                    fontWeight="800"
+                    fill="rgba(255,255,255,0.55)"
+                    style={{ pointerEvents: 'none', userSelect: 'none', textTransform: 'uppercase', letterSpacing: '0.04em' }}
                   >
-                    {labelText}
+                    {el.category}
                   </text>
-                  {showSub && (
+                )}
+              </g>
+            )
+          }
+          if (el.type === 'market') {
+            const norm = Math.max(-1, Math.min(1, el.norm))
+            const fill = heatColor(norm)
+            const pad = 0.12
+            const rx = el.x + pad
+            const ry = el.y + pad
+            const rw = Math.max(0, el.w - pad * 2)
+            const rh = Math.max(0, el.h - pad * 2)
+            if (rw < 0.25 || rh < 0.25) return null
+            const area = rw * rh
+            const fs = Math.max(0.7, Math.min(2.6, rw / 6.5))
+            const subFs = fs * 0.72
+            const showLabel = area > 3
+            const showHeat = area > 8 && el.heatLabel
+            const maxChars = Math.max(2, Math.floor(rw / fs * 1.5))
+            const label = (el.label || '').length > maxChars
+              ? (el.label || '').slice(0, maxChars - 1) + '…'
+              : (el.label || '')
+            const isHov = hovered && hovered.gi === el.gi && hovered.ci === el.ci
+            return (
+              <g key={`mk-${i}`}>
+                <rect
+                  x={rx} y={ry} width={rw} height={rh}
+                  fill={fill}
+                  rx={0.25}
+                  stroke={isHov ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.4)'}
+                  strokeWidth={isHov ? 0.25 : 0.08}
+                  style={{ cursor: 'pointer', transition: 'stroke 0.12s' }}
+                  onMouseEnter={() => setHovered({ gi: el.gi, ci: el.ci })}
+                  onMouseLeave={() => setHovered(null)}
+                />
+                {showLabel && (
+                  <>
                     <text
                       x={rx + rw / 2}
-                      y={ry + rh / 2 + fs * 0.72}
-                      textAnchor="middle"
-                      dominantBaseline="middle"
-                      fontSize={subFs}
-                      fontWeight="600"
-                      fill={norm >= 0 ? 'rgba(52,211,153,0.85)' : 'rgba(248,113,113,0.85)'}
+                      y={ry + rh / 2 - (showHeat ? subFs * 0.55 : 0)}
+                      textAnchor="middle" dominantBaseline="middle"
+                      fontSize={fs} fontWeight="700"
+                      fill="rgba(255,255,255,0.92)"
                       style={{ pointerEvents: 'none', userSelect: 'none' }}
                     >
-                      {rect.heatLabel}
+                      {label}
                     </text>
-                  )}
-                </>
-              )}
-            </g>
-          )
+                    {showHeat && (
+                      <text
+                        x={rx + rw / 2}
+                        y={ry + rh / 2 + fs * 0.65}
+                        textAnchor="middle" dominantBaseline="middle"
+                        fontSize={subFs} fontWeight="600"
+                        fill={norm >= 0 ? 'rgba(52,211,153,0.9)' : 'rgba(248,113,113,0.9)'}
+                        style={{ pointerEvents: 'none', userSelect: 'none' }}
+                      >
+                        {el.heatLabel}
+                      </text>
+                    )}
+                  </>
+                )}
+              </g>
+            )
+          }
+          return null
         })}
       </svg>
 
       {/* Hover detail card */}
-      <div className={`vol-heatmap-detail${hoveredRect ? ' visible' : ''}`}>
-        {hoveredRect ? (
+      <div className={`vol-heatmap-detail${hoveredChild ? ' visible' : ''}`}>
+        {hoveredChild ? (
           <>
-            <div className="hm-detail-name">{hoveredRect.label}</div>
-            {hoveredRect.sublabel && <div className="hm-detail-sub">{hoveredRect.sublabel}</div>}
+            <div className="hm-detail-name">{hoveredChild.label}</div>
+            <div className="hm-detail-sub">{hoveredCat}</div>
             <div className="hm-detail-grid">
-              <span className="hm-detail-key">{sizeLabel}</span>
-              <span className="hm-detail-val">
-                {typeof hoveredRect.value === 'number'
-                  ? hoveredRect.value >= 1_000_000
-                    ? (hoveredRect.value / 1_000_000).toFixed(1) + 'M'
-                    : hoveredRect.value >= 1_000
-                      ? (hoveredRect.value / 1_000).toFixed(1) + 'K'
-                      : hoveredRect.value.toLocaleString('en-US')
-                  : hoveredRect.value}
+              <span className="hm-detail-key">Move</span>
+              <span className={`hm-detail-val ${(hoveredChild.heat ?? 0) >= 0 ? 'tip-up' : 'tip-down'}`}>
+                {hoveredChild.heatLabel || '—'}
               </span>
-              <span className="hm-detail-key">{heatLabel}</span>
-              <span className={`hm-detail-val ${(hoveredRect.heat ?? 0) >= 0 ? 'tip-up' : 'tip-down'}`}>
-                {hoveredRect.heatLabel || '—'}
-              </span>
-              {hoveredRect.count != null && (
-                <>
-                  <span className="hm-detail-key">Markets</span>
-                  <span className="hm-detail-val">{hoveredRect.count}</span>
-                </>
-              )}
             </div>
           </>
         ) : (
@@ -2240,10 +2287,8 @@ function VolIndexPage() {
   const polyDeltas     = usePolyApi('/global-deltas', { limit: 50 })
 
   // ── Extra data for sector heatmap ──
-  const kalshiScreener = useApi('/markets/screener', { limit: 500 })
   const kalshiMovers   = useApi('/market-movers')
-  const polyTopEvents  = usePolyApi('/top-events-volume', { limit: 50 })
-  const polyMidMoves   = usePolyApi('/markets/mid-moves', { hours: 24, limit: 60 })
+  const polyMidMoves   = usePolyApi('/markets/mid-moves', { hours: 24, limit: 100 })
 
   // ── Kalshi index (volume + OI + breadth normalized composite) ──
   let kalshiIndexPoints = ''
@@ -2322,119 +2367,104 @@ function VolIndexPage() {
     combinedLatest = validCombined[validCombined.length - 1]?.toFixed(1);
   }
 
-  // ── Heatmap tiles: Kalshi — group screener rows by series, heat from movers ──
-  const kalshiTiles = (() => {
-    if (!Array.isArray(kalshiScreener.data) || kalshiScreener.data.length === 0) return []
-    // Build price-diff lookup from movers
-    const diffMap = {}
-    if (Array.isArray(kalshiMovers.data)) {
-      kalshiMovers.data.forEach((m) => {
-        if (m.market_ticker && typeof m.price_diff === 'number') {
-          diffMap[m.market_ticker] = m.price_diff
-        }
-      })
-    }
-    // Extract series from ticker: strip KX prefix, take first segment before '-'
-    const groups = {}
-    kalshiScreener.data.forEach((row) => {
-      const series = (row.market_ticker || '')
-        .replace(/^KX/i, '')
-        .split('-')[0]
-        .toUpperCase() || 'OTHER'
-      if (!groups[series]) groups[series] = { volume: 0, diffSum: 0, diffCount: 0, count: 0 }
-      const vol = typeof row.volume === 'number' ? row.volume : 0
-      groups[series].volume += vol
-      groups[series].count += 1
-      const diff = diffMap[row.market_ticker]
-      if (typeof diff === 'number') {
-        groups[series].diffSum += diff * vol // volume-weighted
-        groups[series].diffCount += vol
-      }
-    })
-    return Object.entries(groups)
-      .filter(([, g]) => g.volume > 0)
-      .map(([series, g]) => {
-        const avgDiff = g.diffCount > 0 ? g.diffSum / g.diffCount : 0
-        const sign = avgDiff >= 0 ? '+' : ''
-        return {
-          label: series,
-          value: g.volume,
-          heat: avgDiff,
-          count: g.count,
-          heatLabel: g.diffCount > 0 ? `${sign}${avgDiff.toFixed(1)}¢` : null,
-          sublabel: `${g.count} markets`,
-        }
-      })
-      .sort((a, b) => b.value - a.value)
-  })()
-
-  // ── Heatmap tiles: Polymarket — group mid-moves by keyword category ──
-  const POLY_KEYWORD_CATS = [
-    ['Crypto',     /bitcoin|btc|eth|ethereum|sol|solana|doge|xrp|crypto|coin/i],
-    ['Politics',   /trump|biden|harris|election|president|senate|congress|vote|poll|democrat|republican|governor/i],
-    ['Sports',     /nba|nfl|mlb|nhl|soccer|football|basketball|baseball|tennis|golf|olympics|ufc|mma|f1|formula/i],
-    ['Finance',    /fed|inflation|gdp|rate|economy|recession|market|nasdaq|s&p|dow|interest|oil|gold/i],
-    ['Geopolitics',/war|ukraine|russia|israel|gaza|nato|china|taiwan|iran|north.korea|middle.east/i],
-    ['Tech',       /ai|openai|apple|google|microsoft|nvidia|tesla|meta|amazon|twitter|chatgpt|model/i],
-    ['Climate',    /climate|weather|hurricane|earthquake|wildfire|flood|temperature/i],
+  // ── Heatmap tiles: Kalshi — group movers by category, nested structure ──
+  const KALSHI_CATS = [
+    ['Politics',      /trump|biden|harris|elect|pres|congress|senat|scotus|approv|cabinet|nomine|pardon|border|exec|gop|eo\d|party|vote|poll|doge(?!coin)/i],
+    ['Weather',       /high[a-z]{2,}|temp|tornado|hurricane|storm|snow|rain|flood|drought|wildfire|freeze|wind|cold|heat(?!h)/i],
+    ['Finance',       /sp500|nasdaq|djia|inx|oil|gold|fedfund|fomc|rate(?!d)|inflation|gdp|cpi|yield|recession|jobs|unemp|payroll|housing|mortgage|treasury|ppi|retail/i],
+    ['Crypto',        /btc|eth\b|sol\b|xrp|crypto|bitcoin|ethereum|doge(?=coin)/i],
+    ['Sports',        /nba|nfl|mlb|nhl|ufc|mma|f1\b|golf|tennis|soccer|ncaa|playoff|bowl|champion|nascar|pga|cup\b/i],
+    ['Entertainment', /\brt\b|oscar|grammy|emmy|boxoffice|disney|netflix|movie|film|award|stream/i],
+    ['Tech',          /\bai\b|openai|nvidia|spacex|starlink|chatgpt|robot|chip|semi/i],
+    ['Business',      /acquannounce|ipo|merger|layoff|earn|revenue|bankrupt|ceo/i],
   ]
-  function polyCategory(question) {
-    const q = (question || '').toLowerCase()
-    for (const [cat, re] of POLY_KEYWORD_CATS) {
-      if (re.test(q)) return cat
-    }
+  function kalshiCategory(ticker) {
+    const t = (ticker || '').replace(/^KX/i, '')
+    for (const [cat, re] of KALSHI_CATS) { if (re.test(t)) return cat }
     return 'Other'
   }
 
-  const polyTiles = (() => {
-    if (!Array.isArray(polyMidMoves.data) || polyMidMoves.data.length === 0) return []
-    // Build volume lookup from top events (keyed by condition_id or merged by question)
-    // topEventsVolume doesn't share IDs with midMoves, so we use midMoves directly:
-    // size = equal weight (no volume on mid-moves endpoint), heat = price_diff
-    // Fallback: if polyTopEvents has data, use it for volume context
+  const kalshiGroups = (() => {
+    const movers = Array.isArray(kalshiMovers.data) ? kalshiMovers.data : []
+    if (movers.length === 0) return []
     const groups = {}
-    polyMidMoves.data.forEach((row) => {
-      const cat = polyCategory(row.question ?? row.title ?? '')
-      if (!groups[cat]) groups[cat] = { diffSum: 0, count: 0 }
-      const diff = typeof row.price_diff === 'number' ? row.price_diff * 100 : 0
-      groups[cat].diffSum += diff
-      groups[cat].count += 1
+    movers.forEach((m) => {
+      const cat = kalshiCategory(m.market_ticker)
+      if (!groups[cat]) groups[cat] = { children: [] }
+      const series = (m.market_ticker || '').replace(/^KX/i, '').split('-')[0]
+      const label = series
+        .replace(/([a-z])([A-Z])/g, '$1 $2')
+        .replace(/([A-Z]+)/g, ' $1')
+        .trim()
+      groups[cat].children.push({
+        label,
+        value: Math.max(1, Math.abs(m.price_diff || 0)),
+        heat: m.price_diff || 0,
+        heatLabel: `${(m.price_diff || 0) >= 0 ? '+' : ''}${(m.price_diff || 0).toFixed(1)}¢`,
+      })
     })
-    // For size: try to use topEventsVolume volume by category match
-    const evtVolByCat = {}
-    if (Array.isArray(polyTopEvents.data)) {
-      polyTopEvents.data.forEach((ev) => {
-        // Guess category from event_ticker first segment
-        const prefix = (ev.event_ticker || '').split('-')[0].toUpperCase()
-        const cat = polyCategory(ev.event_ticker || prefix)
-        evtVolByCat[cat] = (evtVolByCat[cat] || 0) + (ev.total_volume || 0)
-      })
-    }
     return Object.entries(groups)
-      .map(([cat, g]) => {
-        const avgDiff = g.count > 0 ? g.diffSum / g.count : 0
-        const sign = avgDiff >= 0 ? '+' : ''
-        // Use top-events volume for tile size when available, otherwise use market count
-        const vol = evtVolByCat[cat] || g.count * 1000
-        return {
-          label: cat,
-          value: vol,
-          heat: avgDiff,
-          count: g.count,
-          heatLabel: `${sign}${avgDiff.toFixed(1)}pp`,
-          sublabel: `${g.count} markets`,
-        }
+      .map(([category, g]) => ({
+        category,
+        totalValue: g.children.reduce((s, c) => s + c.value, 0),
+        avgHeat: g.children.reduce((s, c) => s + c.heat, 0) / g.children.length,
+        children: g.children.sort((a, b) => b.value - a.value),
+      }))
+      .sort((a, b) => b.totalValue - a.totalValue)
+  })()
+
+  // ── Heatmap tiles: Polymarket — group mid-moves by keyword category, nested ──
+  const POLY_KEYWORD_CATS = [
+    ['Crypto',        /bitcoin|btc|eth|ethereum|sol|solana|doge|xrp|crypto|coin|token|nft|defi|blockchain|binance|coinbase/i],
+    ['Politics',      /trump|biden|harris|election|president|senate|congress|vote|poll|democrat|republican|governor|cabinet|impeach|pardon|executive|border|immigration|gop|dnc|rnc|nominee|speaker|filibuster|veto|ballot|primary|swing.state/i],
+    ['Sports',        /nba|nfl|mlb|nhl|soccer|football|basketball|baseball|tennis|golf|olympics|ufc|mma|f1|formula|spread|match|playoff|champion|league|cup\b|seed|draft|scoring|winner|medal|grand.prix|premier|serie.a|la.liga|bundesliga|ligue|epl|ncaa|super.bowl|world.series|stanley|mvp/i],
+    ['Finance',       /fed\b|inflation|gdp|rate\b|economy|recession|market|nasdaq|s&p|dow|interest|oil|gold|treasury|cpi|stock|etf|bond|yield|earnings|ipo|tariff|trade.war|magnificent|amzn|aapl|msft|googl|nvda|tsla|meta\b/i],
+    ['Geopolitics',   /war|ukraine|russia|israel|gaza|nato|china|taiwan|iran|north.korea|middle.east|ceasefire|sanction|missile|invasion|troops|military|peace/i],
+    ['Tech',          /\bai\b|openai|apple|google|microsoft|nvidia|tesla|meta\b|amazon|twitter|chatgpt|model|robot|spacex|starlink|semiconductor|chip|gpt|anthropic|gemini|llama/i],
+    ['Entertainment', /oscar|grammy|emmy|movie|film|music|streaming|disney|netflix|spotify|tiktok|youtube|award|album|song|concert|box.office|reality.tv|bachelor/i],
+    ['Climate',       /climate|weather|hurricane|earthquake|wildfire|flood|temperature|drought|tornado|sea.level|carbon|emission/i],
+  ]
+  function polyCategory(question) {
+    const q = (question || '')
+    for (const [cat, re] of POLY_KEYWORD_CATS) { if (re.test(q)) return cat }
+    return 'Other'
+  }
+
+  const polyGroups = (() => {
+    const moves = Array.isArray(polyMidMoves.data) ? polyMidMoves.data : []
+    if (moves.length === 0) return []
+    const groups = {}
+    moves.forEach((row) => {
+      const cat = polyCategory(row.question ?? row.title ?? '')
+      if (!groups[cat]) groups[cat] = { children: [] }
+      const vol = typeof row.volume === 'number' ? row.volume : 1
+      const diff = typeof row.price_diff === 'number' ? row.price_diff * 100 : 0
+      const q = (row.question ?? row.title ?? '').replace(/^Will\s+/i, '').replace(/\?$/, '')
+      const label = q.length > 35 ? q.slice(0, 33) + '…' : q
+      groups[cat].children.push({
+        label,
+        value: Math.max(1, vol),
+        heat: diff,
+        heatLabel: `${diff >= 0 ? '+' : ''}${diff.toFixed(1)}pp`,
       })
-      .sort((a, b) => b.value - a.value)
+    })
+    return Object.entries(groups)
+      .map(([category, g]) => ({
+        category,
+        totalValue: g.children.reduce((s, c) => s + c.value, 0),
+        avgHeat: g.children.reduce((s, c) => s + c.heat, 0) / g.children.length,
+        children: g.children.sort((a, b) => b.value - a.value),
+      }))
+      .sort((a, b) => b.totalValue - a.totalValue)
   })()
 
   const hmLoading = hmProvider === 'kalshi'
-    ? kalshiScreener.loading || kalshiMovers.loading
+    ? kalshiMovers.loading
     : polyMidMoves.loading
   const hmError = hmProvider === 'kalshi'
-    ? kalshiScreener.error || kalshiMovers.error
+    ? kalshiMovers.error
     : polyMidMoves.error
-  const hmTiles = hmProvider === 'kalshi' ? kalshiTiles : polyTiles
+  const hmGroups = hmProvider === 'kalshi' ? kalshiGroups : polyGroups
 
   return (
     <div className="dashboard">
@@ -2450,7 +2480,7 @@ function VolIndexPage() {
           <div>
             <div className="panel-title">Sector Volatility Heatmap</div>
             <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.35)', marginTop: '0.15rem' }}>
-              Tile size = trading volume &nbsp;·&nbsp; Color = price direction
+              Tile size = price movement &nbsp;·&nbsp; Color = direction
             </div>
           </div>
           <div className="hm-provider-tabs">
@@ -2474,17 +2504,14 @@ function VolIndexPage() {
         </div>
         <div className="panel-body">
           <VolHeatmap
-            tiles={hmTiles}
+            groups={hmGroups}
             loading={hmLoading}
             error={hmError}
-            sizeLabel="Volume"
-            heatLabel={hmProvider === 'kalshi' ? 'Avg Price Shift' : 'Avg Move (24h)'}
           />
           <p className="panel-methodology" style={{ marginTop: '0.75rem' }}>
-            Each tile represents a market series or category.{' '}
             {hmProvider === 'kalshi'
-              ? 'Tile size reflects total traded volume across all contracts in that series. Color (green = rising, red = falling) reflects the volume-weighted average price change from recent market-mover data.'
-              : 'Tile size reflects total event volume. Color reflects the average price movement across the top 24h movers in each category, derived from keyword classification of market questions.'}
+              ? 'Categories are derived from market ticker prefixes. Each inner tile is an individual market mover. Tile size reflects the magnitude of price change; color (green = rising, red = falling) shows direction.'
+              : 'Categories are derived from keyword classification of market questions. Each inner tile is a market with a significant mid-price move in the last 24h. Tile size reflects traded volume; color shows price direction.'}
           </p>
         </div>
       </div>
