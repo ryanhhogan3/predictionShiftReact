@@ -931,11 +931,15 @@ function Dashboard() {
       </div>
 
       {/* ═══ EXPIRING SOON — countdown cards ═══ */}
-      {Array.isArray(expiringSoon.data) && expiringSoon.data.length > 0 && (
+      {(() => {
+        const liveExpiring = Array.isArray(expiringSoon.data)
+          ? expiringSoon.data.filter(r => r.expiration_time && new Date(r.expiration_time) > new Date())
+          : []
+        return liveExpiring.length > 0 && (
         <div className="poly-expiring-section" data-tour="kalshi-expiring">
           <h3 className="poly-section-title">⏱ Expiring Soon</h3>
           <div className="poly-expiring-grid">
-            {expiringSoon.data.slice(0, 8).map((row, idx) => {
+            {liveExpiring.slice(0, 8).map((row, idx) => {
               const remaining = timeUntilK(row.expiration_time)
               const midPrice = typeof row.mid === 'number' ? row.mid : null
               const isUrgent = remaining.includes('h') && !remaining.includes('d')
@@ -959,7 +963,8 @@ function Dashboard() {
             })}
           </div>
         </div>
-      )}
+        )
+      })()}
       {expiringSoon.loading && (
         <div className="panel" style={{ marginTop: '1rem' }}>
           <div className="panel-body"><div className="loading">Loading expiring markets…</div></div>
@@ -1392,7 +1397,7 @@ function PolyDashboard() {
   const globalDeltasFull = usePolyApi('/global-deltas', { limit: 200 })
   const topEventsVolume  = usePolyApi('/top-events-volume', { limit: 15 })
   const topEventsLiq     = usePolyApi('/top-events-liquidity', { limit: 15 })
-  const expiringSoon     = usePolyApi('/markets/expiring-soon', { hours: 48, limit: 15 })
+  const expiringSoon     = usePolyApi('/markets/expiring-soon', { hours: 168, limit: 50 })
   const midMoves         = usePolyApi('/markets/mid-moves', { hours: 24, limit: 15 })
   const volIndex         = usePolyApi('/vol/index/global', { points: 50 })
 
@@ -1708,11 +1713,15 @@ function PolyDashboard() {
       </div>
 
       {/* ═══ EXPIRING SOON — countdown cards ═══ */}
-      {Array.isArray(expiringSoon.data) && expiringSoon.data.length > 0 && (
+      {(() => {
+        const liveExpiring = Array.isArray(expiringSoon.data)
+          ? expiringSoon.data.filter(r => r.end_date && new Date(r.end_date) > new Date())
+          : []
+        return liveExpiring.length > 0 && (
         <div className="poly-expiring-section" data-tour="poly-expiring">
           <h3 className="poly-section-title">⏱ Expiring Soon</h3>
           <div className="poly-expiring-grid">
-            {expiringSoon.data.slice(0, 8).map((row, idx) => {
+            {liveExpiring.slice(0, 8).map((row, idx) => {
               const remaining = timeUntil(row.end_date)
               const yesPrice = typeof row.outcome_yes_price === 'number' ? row.outcome_yes_price : null
               const isUrgent = remaining.includes('h') && !remaining.includes('d')
@@ -1736,7 +1745,8 @@ function PolyDashboard() {
             })}
           </div>
         </div>
-      )}
+        )
+      })()}
       {expiringSoon.loading && (
         <div className="panel" style={{ marginTop: '1rem' }}>
           <div className="panel-body"><div className="loading">Loading expiring markets…</div></div>
