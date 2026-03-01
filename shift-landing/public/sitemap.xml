@@ -1,22 +1,55 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<urlset
+  xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+  xmlns:xhtml="http://www.w3.org/1999/xhtml"
+  xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
 
+  <!-- ═══ Landing / Home ═══ -->
   <url>
     <loc>https://predictionshift.com/</loc>
-    <priority>1.0</priority>
+    <lastmod>2026-03-01</lastmod>
     <changefreq>daily</changefreq>
+    <priority>1.0</priority>
   </url>
 
+  <!-- ═══ Kalshi Dashboard — real-time analytics ═══ -->
   <url>
     <loc>https://predictionshift.com/dashboard</loc>
-    <priority>0.9</priority>
-    <changefreq>daily</changefreq>
+    <lastmod>2026-03-01</lastmod>
+    <changefreq>hourly</changefreq>
+    <priority>0.95</priority>
   </url>
 
+  <!-- ═══ Kalshi Screener — filterable market table ═══ -->
   <url>
     <loc>https://predictionshift.com/screener</loc>
-    <priority>0.8</priority>
-    <changefreq>daily</changefreq>
+    <lastmod>2026-03-01</lastmod>
+    <changefreq>hourly</changefreq>
+    <priority>0.85</priority>
+  </url>
+
+  <!-- ═══ Polymarket Dashboard — real-time analytics ═══ -->
+  <url>
+    <loc>https://predictionshift.com/poly-dashboard</loc>
+    <lastmod>2026-03-01</lastmod>
+    <changefreq>hourly</changefreq>
+    <priority>0.95</priority>
+  </url>
+
+  <!-- ═══ Polymarket Screener — filterable market table ═══ -->
+  <url>
+    <loc>https://predictionshift.com/poly-screener</loc>
+    <lastmod>2026-03-01</lastmod>
+    <changefreq>hourly</changefreq>
+    <priority>0.85</priority>
+  </url>
+
+  <!-- ═══ Volatility Index — cross-platform vol tracker ═══ -->
+  <url>
+    <loc>https://predictionshift.com/vol-index</loc>
+    <lastmod>2026-03-01</lastmod>
+    <changefreq>hourly</changefreq>
+    <priority>0.80</priority>
   </url>
 
 </urlset>
