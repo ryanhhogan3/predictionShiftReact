@@ -1140,6 +1140,18 @@ h1 {
   .screener-filter-actions button {
     flex: 1;
   }
+
+  .category-subnav {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    justify-content: flex-start;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;          /* Firefox */
+    -ms-overflow-style: none;       /* IE/Edge */
+  }
+  .category-subnav::-webkit-scrollbar {
+    display: none;                  /* Chrome/Safari */
+  }
 }
 
 @media (min-width: 640px) {
