@@ -568,6 +568,11 @@ const KALSHI_TOUR_STEPS = [
     body: 'The top 6 markets with the biggest price shifts in the last hour. Green = rising, red = falling. Great for spotting where money is flowing right now.',
   },
   {
+    target: '[data-tour="kalshi-mid-moves"]',
+    title: 'Mid-Price Moves',
+    body: 'A detailed table of the largest 24-hour mid-price changes. Shows old vs new mid-price and the change in spread — useful for identifying consensus shifts.',
+  },
+  {
     target: '[data-tour="kalshi-24h-changes"]',
     title: '24h Changes Table',
     body: 'A sortable table showing the biggest metric changes over the past 24 hours. Click column headers to sort by volume, spread, or price delta.',
@@ -625,9 +630,11 @@ const POLY_TOUR_STEPS = [
 function Dashboard() {
   const [activeCategory, setActiveCategory] = useState('Trending')
   const eventsByVolume = useApi('/top-events-volume')
+  const eventsByOI     = useApi('/top-events-open-interest', { limit: 8 })
   const spreadBlowouts = useApi('/markets/spread-blowouts')
   const expiringSoon = useApi('/markets/expiring-soon')
   const marketMovers = useApi('/market-movers')
+  const midMoves     = useApi('/markets/mid-moves', { hours: 24, limit: 15 })
   const globalDeltas = useApi('/global-6h-deltas', { limit: 150 })
 
   let latestIndex = null
@@ -822,6 +829,56 @@ function Dashboard() {
         </div>
       )}
 
+      {/* ═══ MID-PRICE MOVES — 24h ═══ */}
+      {(Array.isArray(midMoves.data) && midMoves.data.length > 0) && (
+        <div className="panel" data-tour="kalshi-mid-moves" style={{ marginTop: '1.5rem' }}>
+          <div className="panel-header">
+            <div className="panel-title">Largest Mid-Price Moves (24h)</div>
+          </div>
+          <div className="panel-body">
+            <div className="markets-table-scroll">
+              <table className="markets-table">
+                <thead>
+                  <tr>
+                    <th>Ticker</th>
+                    <th>Title</th>
+                    <th>Old Mid</th>
+                    <th>New Mid</th>
+                    <th>Δ Mid</th>
+                    <th>Spread Δ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {midMoves.data.slice(0, 15).map((row, idx) => {
+                    const dMid = typeof row.d_mid === 'number' ? row.d_mid : 0
+                    const dSpread = typeof row.d_spread === 'number' ? row.d_spread : 0
+                    return (
+                      <tr key={row.market_ticker ?? idx}>
+                        <td>{row.market_ticker}</td>
+                        <td>{row.title}</td>
+                        <td>{fmtDec(row.mid_prev)}¢</td>
+                        <td>{fmtDec(row.mid_now)}¢</td>
+                        <td className={dMid >= 0 ? 'diff-up' : 'diff-down'}>
+                          {dMid >= 0 ? '+' : ''}{fmtDec(dMid)}¢
+                        </td>
+                        <td className={dSpread > 0 ? 'diff-up' : dSpread < 0 ? 'diff-down' : ''}>
+                          {dSpread > 0 ? '+' : ''}{fmtDec(dSpread)}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+      {midMoves.loading && (
+        <div className="panel" style={{ marginTop: '1rem' }}>
+          <div className="panel-body"><div className="loading">Loading mid-price moves…</div></div>
+        </div>
+      )}
+
       <div data-tour="kalshi-24h-changes">
         <Last24hChangesPanel defaultProvider="kalshi" />
       </div>
@@ -862,7 +919,7 @@ function Dashboard() {
       </div>
 
       {/* ═══ TOP EVENTS + SPREAD BLOWOUTS — side by side ═══ */}
-      <div className="poly-events-duo" data-tour="kalshi-events-spreads">
+      <div className="poly-events-duo" data-tour="kalshi-events-spreads" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
         {/* Top Events by Volume */}
         <div className="panel poly-events-panel">
           <div className="panel-header">
@@ -883,6 +940,33 @@ function Dashboard() {
                       </div>
                     </div>
                     <div className="poly-event-stat">{fmtNum(row.total_volume)}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Top Events by Open Interest */}
+        <div className="panel poly-events-panel">
+          <div className="panel-header">
+            <div className="panel-title">Top Events — Open Interest</div>
+          </div>
+          <div className="panel-body">
+            {eventsByOI.loading && <div className="loading">Loading…</div>}
+            {eventsByOI.error && <div className="error">{eventsByOI.error.message}</div>}
+            {Array.isArray(eventsByOI.data) && eventsByOI.data.length > 0 && (
+              <div className="poly-event-list">
+                {eventsByOI.data.slice(0, 8).map((row, idx) => (
+                  <div key={row.event_ticker ?? idx} className="poly-event-row">
+                    <span className="poly-event-rank">{idx + 1}</span>
+                    <div className="poly-event-info">
+                      <div className="poly-event-name">{row.event_ticker}</div>
+                      <div className="poly-event-meta">
+                        {fmtNum(row.n_markets)} markets · spread {fmtDec(row.avg_spread_ticks, 2)}
+                      </div>
+                    </div>
+                    <div className="poly-event-stat">{fmtCompact(row.total_open_interest)}</div>
                   </div>
                 ))}
               </div>
@@ -1029,10 +1113,14 @@ function ScreenerPage() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(25)
 
-  const screener = useApi('/markets/screener', {
-    limit: 250,
-    _refresh: refreshNonce,
-  })
+  // Build query params from form state — only include non-empty filters
+  const screenerParams = { limit: 200, _refresh: refreshNonce }
+  if (form.minVolume !== '') screenerParams.min_volume = Number(form.minVolume)
+  if (form.minOpenInterest !== '') screenerParams.min_open_interest = Number(form.minOpenInterest)
+  if (form.minSpread !== '') screenerParams.max_spread_ticks = Number(form.minSpread)
+  screenerParams.sort_by = form.sortBy
+
+  const screener = useApi('/markets/screener', screenerParams)
 
   useEffect(() => {
     if (Array.isArray(screener.data)) {
@@ -1131,12 +1219,9 @@ function ScreenerPage() {
       <p className="seo-blurb">
         Interactive prediction market screener filtering by volume, open interest, spread tightness, tradability score, churn rate, and price levels for Kalshi and Polymarket contracts.
       </p>
-      <h2>Market Screener <span className="coming-soon-badge coming-soon-badge--lg">Coming Soon</span></h2>
-      <div className="coming-soon-banner">
-        This feature is a work in progress. Filtering is currently disabled.
-      </div>
+      <h2>Market Screener</h2>
 
-      <fieldset disabled className="screener-filters screener-fieldset-wip">
+      <fieldset className="screener-filters">
         <div className="screener-filter-group">
           <label htmlFor="minVolume">Min Volume</label>
           <input
@@ -1807,10 +1892,14 @@ function PolyScreenerPage() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(25)
 
-  const screener = usePolyApi('/markets/screener', {
-    limit: 250,
-    _refresh: refreshNonce,
-  })
+  // Build query params from form state — only include non-empty filters
+  const screenerParams = { limit: 200, _refresh: refreshNonce }
+  if (form.minVolume !== '') screenerParams.min_volume = Number(form.minVolume)
+  if (form.minLiquidity !== '') screenerParams.min_liquidity = Number(form.minLiquidity)
+  if (form.category !== '') screenerParams.category = form.category
+  screenerParams.sort_by = form.sortBy
+
+  const screener = usePolyApi('/markets/screener', screenerParams)
 
   useEffect(() => {
     if (Array.isArray(screener.data)) {
@@ -1895,12 +1984,9 @@ function PolyScreenerPage() {
         Polymarket screener — filter by volume, liquidity, and category; sort
         by tradability score, churn, uncertainty, or any metric.
       </p>
-      <h2>Polymarket Screener <span className="coming-soon-badge coming-soon-badge--lg">Coming Soon</span></h2>
-      <div className="coming-soon-banner">
-        This feature is a work in progress. Filtering is currently disabled.
-      </div>
+      <h2>Polymarket Screener</h2>
 
-      <fieldset disabled className="screener-filters screener-fieldset-wip">
+      <fieldset className="screener-filters">
         <div className="screener-filter-group">
           <label htmlFor="poly-minVolume">Min Volume (USDC)</label>
           <input
@@ -2717,6 +2803,7 @@ function VolIndexPage() {
   const [hmProvider, setHmProvider] = useState('kalshi')
 
   const kalshiDeltas   = useApi('/global-6h-deltas', { limit: 50 })
+  const kalshiVolIndex = useApi('/vol/index/global', { points: 50 })
   const polyVolIndex   = usePolyApi('/vol/index/global', { points: 50 })
   const polyDeltas     = usePolyApi('/global-deltas', { limit: 50 })
 
@@ -2768,6 +2855,18 @@ function VolIndexPage() {
     polyTimes = rows.map((r) => r.snap_ts ?? '')
     polyIndexPoints = buildNormPoints(polyValues)
     polyLatest = polyValues[polyValues.length - 1]?.toFixed(4)
+  }
+
+  // ── Kalshi vol index (log-odds, annualized) ──
+  let kalshiVolValues = []
+  let kalshiVolTimes = []
+  let kalshiVolLatest = null
+  const kalshiVolSeries = kalshiVolIndex.data?.series || (Array.isArray(kalshiVolIndex.data) ? kalshiVolIndex.data : [])
+  if (kalshiVolSeries.length > 0) {
+    const rows = [...kalshiVolSeries].reverse()
+    kalshiVolValues = rows.map((r) => r.vol_index ?? 0)
+    kalshiVolTimes = rows.map((r) => r.snap_ts ?? '')
+    kalshiVolLatest = kalshiVolValues[kalshiVolValues.length - 1]?.toFixed(4)
   }
 
   // ── Poly Δ volume / Δ liquidity chart ──
@@ -3096,7 +3195,408 @@ function VolIndexPage() {
                 }}
               />
             </div>
+
+            {/* ── Kalshi Realized Vol Index ── */}
+            <div style={{ marginTop: '2rem' }}>
+              <div
+                className="panel-section-label"
+                style={{ fontSize: '0.75rem', opacity: 0.6, marginBottom: '0.4rem' }}
+              >
+                KALSHI REALIZED VOL INDEX (ANNUALIZED)
+              </div>
+              {kalshiVolIndex.loading && <div className="loading">Loading…</div>}
+              {!kalshiVolIndex.loading && kalshiVolValues.length > 0 && (
+                <ModernLineChart
+                  series={[{ label: 'Kalshi Vol Index', values: kalshiVolValues, times: kalshiVolTimes, color: '#6366f1' }]}
+                  loading={false}
+                  error={null}
+                  showAxes={true}
+                  yAxisFormatter={(v) => (typeof v === 'number' && !isNaN(v) ? v.toFixed(2) : '')}
+                  xAxisFormatter={(t) => {
+                    if (!t) return '';
+                    const d = new Date(t);
+                    if (isNaN(d.getTime())) return t;
+                    return d.toLocaleString('en-US', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+                  }}
+                />
+              )}
+              {!kalshiVolIndex.loading && kalshiVolValues.length === 0 && !kalshiVolIndex.error && (
+                <span className="muted">No Kalshi vol-index data available yet.</span>
+              )}
+            </div>
+
+            {/* ── Poly Realized Vol Index ── */}
+            <div style={{ marginTop: '2rem' }}>
+              <div
+                className="panel-section-label"
+                style={{ fontSize: '0.75rem', opacity: 0.6, marginBottom: '0.4rem' }}
+              >
+                POLYMARKET REALIZED VOL INDEX (ANNUALIZED)
+              </div>
+              {polyVolIndex.loading && <div className="loading">Loading…</div>}
+              {!polyVolIndex.loading && polyValues.length > 0 && (
+                <ModernLineChart
+                  series={[{ label: 'Poly Vol Index', values: polyValues, times: polyTimes, color: '#a855f7' }]}
+                  loading={false}
+                  error={null}
+                  showAxes={true}
+                  yAxisFormatter={(v) => (typeof v === 'number' && !isNaN(v) ? v.toFixed(2) : '')}
+                  xAxisFormatter={(t) => {
+                    if (!t) return '';
+                    const d = new Date(t);
+                    if (isNaN(d.getTime())) return t;
+                    return d.toLocaleString('en-US', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+                  }}
+                />
+              )}
+              {!polyVolIndex.loading && polyValues.length === 0 && !polyVolIndex.error && (
+                <span className="muted">No Polymarket vol-index data available yet.</span>
+              )}
+            </div>
           </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Signals Page ────────────────────────────────────────────────────────────
+
+function SignalsPage() {
+  const [platform, setPlatform] = useState('kalshi')
+  const [movesHours, setMovesHours] = useState(1)
+  const [movesMinVol, setMovesMinVol] = useState(0)
+  const [movesLimit, setMovesLimit] = useState(50)
+  const [oppLimit, setOppLimit] = useState(50)
+  const [heatLimit, setHeatLimit] = useState(50)
+  const [tradeLimit, setTradeLimit] = useState(50)
+
+  // ── Biggest Moves ──
+  const kalshiMoves = useApi('/signals/biggest-moves', { limit: movesLimit, hours: movesHours, min_volume: movesMinVol })
+  const polyMoves   = usePolyApi('/signals/biggest-moves', { limit: movesLimit, hours: movesHours, min_volume: movesMinVol })
+  const movesData   = platform === 'kalshi' ? kalshiMoves : polyMoves
+
+  // ── Opportunity Gap ──
+  const kalshiOpp = useApi('/opportunity-gap', { limit: oppLimit })
+  const polyOpp   = usePolyApi('/opportunity-gap', { limit: oppLimit })
+  const oppData   = platform === 'kalshi' ? kalshiOpp : polyOpp
+
+  // ── Market Heat ──
+  const kalshiHeat = useApi('/market-heat', { limit: heatLimit })
+  const polyHeat   = usePolyApi('/market-heat', { limit: heatLimit })
+  const heatData   = platform === 'kalshi' ? kalshiHeat : polyHeat
+
+  // ── Tradability Score ──
+  const kalshiTrade = useApi('/tradeability-score', { limit: tradeLimit })
+  const polyTrade   = usePolyApi('/tradeability-score', { limit: tradeLimit })
+  const tradeData   = platform === 'kalshi' ? kalshiTrade : polyTrade
+
+  const fmtNum = (v) => (typeof v === 'number' ? v.toLocaleString('en-US') : '—')
+  const fmtDec = (v, d = 2) => (typeof v === 'number' ? v.toFixed(d) : '—')
+  const fmtPct = (v) => (typeof v === 'number' ? `${(v * 100).toFixed(1)}%` : '—')
+
+  const renderLoading = (msg) => <div className="loading">{msg}</div>
+  const renderError = (err) => err ? <div className="error">{err.message}</div> : null
+
+  return (
+    <div className="dashboard signals-page">
+      <p className="seo-blurb">
+        Advanced prediction market signals: biggest movers, opportunity gaps,
+        market heat, and tradability scores for Kalshi and Polymarket.
+      </p>
+      <h2 className="dashboard-title">Signals &amp; Analysis</h2>
+
+      {/* ── Platform Toggle ── */}
+      <div className="signals-platform-toggle">
+        <button
+          type="button"
+          className={`signals-toggle-btn${platform === 'kalshi' ? ' active' : ''}`}
+          onClick={() => setPlatform('kalshi')}
+        >
+          <img src={KALSHI_LOGO_URL} alt="" style={{ height: 14, width: 14, objectFit: 'contain' }} />
+          Kalshi
+        </button>
+        <button
+          type="button"
+          className={`signals-toggle-btn${platform === 'poly' ? ' active' : ''}`}
+          onClick={() => setPlatform('poly')}
+        >
+          <img src={POLYMARKET_LOGO_URL} alt="" style={{ height: 14, width: 14, objectFit: 'contain' }} />
+          Polymarket
+        </button>
+      </div>
+
+      {/* ═══ BIGGEST MOVES ═══ */}
+      <div className="panel" style={{ marginTop: '1.5rem' }}>
+        <div className="panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div className="panel-title">Biggest Moves</div>
+          <div className="signals-controls">
+            <label>
+              Hours
+              <select value={movesHours} onChange={(e) => setMovesHours(Number(e.target.value))}>
+                {[1, 2, 4, 6, 12, 24, 48, 168].map((h) => (
+                  <option key={h} value={h}>{h}h</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Min Vol
+              <input
+                type="number"
+                min="0"
+                value={movesMinVol}
+                onChange={(e) => setMovesMinVol(Number(e.target.value) || 0)}
+                style={{ width: '5rem' }}
+              />
+            </label>
+            <label>
+              Limit
+              <select value={movesLimit} onChange={(e) => setMovesLimit(Number(e.target.value))}>
+                {[20, 50, 100, 200].map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </label>
+          </div>
+        </div>
+        <div className="panel-body">
+          {movesData.loading && renderLoading('Loading biggest moves…')}
+          {renderError(movesData.error)}
+          {Array.isArray(movesData.data) && movesData.data.length > 0 && (
+            <div className="markets-table-scroll">
+              <table className="markets-table">
+                <thead>
+                  <tr>
+                    <th>{platform === 'kalshi' ? 'Ticker' : 'Question'}</th>
+                    {platform === 'kalshi' && <th>Title</th>}
+                    {platform === 'poly' && <th>Category</th>}
+                    <th>Now</th>
+                    <th>Prev</th>
+                    <th>Move</th>
+                    <th>|Move|</th>
+                    <th>Score</th>
+                    <th>Avg 24h</th>
+                    <th>Volume</th>
+                    <th>{platform === 'kalshi' ? 'OI' : 'Liquidity'}</th>
+                    {platform === 'kalshi' && <th>Spread</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {movesData.data.map((row, idx) => {
+                    const move = typeof row.move === 'number' ? row.move : 0
+                    const isKalshi = platform === 'kalshi'
+                    return (
+                      <tr key={(isKalshi ? row.market_ticker : row.condition_id) ?? idx}>
+                        <td>{isKalshi ? row.market_ticker : row.question}</td>
+                        <td>{isKalshi ? row.title : (row.category ?? '—')}</td>
+                        <td>{isKalshi ? `${fmtDec(row.mid_now, 1)}¢` : fmtPct(row.price_now)}</td>
+                        <td>{isKalshi ? `${fmtDec(row.mid_prev, 1)}¢` : fmtPct(row.price_prev)}</td>
+                        <td className={move >= 0 ? 'diff-up' : 'diff-down'}>
+                          {move >= 0 ? '+' : ''}{isKalshi ? `${fmtDec(move, 1)}¢` : fmtDec(move * 100, 1) + 'pp'}
+                        </td>
+                        <td>{isKalshi ? fmtDec(row.abs_move, 1) : fmtDec((row.abs_move ?? 0) * 100, 1)}</td>
+                        <td>{row.move_score != null ? fmtDec(row.move_score, 2) : '—'}</td>
+                        <td>{row.avg_move_24h != null ? fmtDec(row.avg_move_24h, 2) : '—'}</td>
+                        <td>{fmtNum(row.volume)}</td>
+                        <td>{fmtNum(isKalshi ? row.open_interest : row.liquidity)}</td>
+                        {isKalshi && <td>{fmtDec(row.spread_ticks, 1)}</td>}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {Array.isArray(movesData.data) && movesData.data.length === 0 && !movesData.loading && (
+            <span className="muted">No moves found for this window.</span>
+          )}
+        </div>
+      </div>
+
+      {/* ═══ OPPORTUNITY GAP ═══ */}
+      <div className="panel" style={{ marginTop: '1.5rem' }}>
+        <div className="panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div className="panel-title">Opportunity Gap</div>
+          <div className="signals-controls">
+            <label>
+              Limit
+              <select value={oppLimit} onChange={(e) => setOppLimit(Number(e.target.value))}>
+                {[20, 50, 100, 200].map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </label>
+          </div>
+        </div>
+        <div className="panel-body">
+          {oppData.loading && renderLoading('Loading opportunity gaps…')}
+          {renderError(oppData.error)}
+          {Array.isArray(oppData.data) && oppData.data.length > 0 && (
+            <div className="markets-table-scroll">
+              <table className="markets-table">
+                <thead>
+                  <tr>
+                    <th>{platform === 'kalshi' ? 'Ticker' : 'Question'}</th>
+                    {platform === 'kalshi' && <th>Title</th>}
+                    {platform === 'poly' && <th>Category</th>}
+                    {platform === 'kalshi' ? (
+                      <>
+                        <th>Spread Pts</th>
+                        <th>Spread %</th>
+                      </>
+                    ) : (
+                      <>
+                        <th>Volume</th>
+                        <th>Yes Price</th>
+                        <th>Uncertainty</th>
+                        <th>Opp Score</th>
+                      </>
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {oppData.data.map((row, idx) => {
+                    const isKalshi = platform === 'kalshi'
+                    return (
+                      <tr key={(isKalshi ? row.market_ticker : row.condition_id) ?? idx}>
+                        <td>{isKalshi ? row.market_ticker : row.question}</td>
+                        {isKalshi && <td>{row.title}</td>}
+                        {!isKalshi && <td>{row.category ?? '—'}</td>}
+                        {isKalshi ? (
+                          <>
+                            <td>{fmtDec(row.spread_points, 1)}</td>
+                            <td>{fmtDec(row.spread_percentage, 1)}%</td>
+                          </>
+                        ) : (
+                          <>
+                            <td>{fmtNum(row.volume)}</td>
+                            <td>{fmtPct(row.outcome_yes_price)}</td>
+                            <td>{fmtDec(row.uncertainty, 4)}</td>
+                            <td>{fmtDec(row.opportunity_score, 4)}</td>
+                          </>
+                        )}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {Array.isArray(oppData.data) && oppData.data.length === 0 && !oppData.loading && (
+            <span className="muted">No opportunity gaps found.</span>
+          )}
+        </div>
+      </div>
+
+      {/* ═══ MARKET HEAT ═══ */}
+      <div className="panel" style={{ marginTop: '1.5rem' }}>
+        <div className="panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div className="panel-title">Market Heat (Churn Rate)</div>
+          <div className="signals-controls">
+            <label>
+              Limit
+              <select value={heatLimit} onChange={(e) => setHeatLimit(Number(e.target.value))}>
+                {[20, 50, 100, 200].map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </label>
+          </div>
+        </div>
+        <div className="panel-body">
+          {heatData.loading && renderLoading('Loading market heat…')}
+          {renderError(heatData.error)}
+          {Array.isArray(heatData.data) && heatData.data.length > 0 && (
+            <div className="markets-table-scroll">
+              <table className="markets-table">
+                <thead>
+                  <tr>
+                    <th>{platform === 'kalshi' ? 'Ticker' : 'Question'}</th>
+                    {platform === 'kalshi' && <th>Title</th>}
+                    {platform === 'poly' && <th>Category</th>}
+                    {platform === 'poly' && <th>Volume</th>}
+                    {platform === 'poly' && <th>Vol 24h</th>}
+                    <th>Churn Rate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {heatData.data.map((row, idx) => {
+                    const isKalshi = platform === 'kalshi'
+                    return (
+                      <tr key={(isKalshi ? row.market_ticker : row.condition_id) ?? idx}>
+                        <td>{isKalshi ? row.market_ticker : row.question}</td>
+                        {isKalshi && <td>{row.title}</td>}
+                        {!isKalshi && <td>{row.category ?? '—'}</td>}
+                        {!isKalshi && <td>{fmtNum(row.volume)}</td>}
+                        {!isKalshi && <td>{fmtNum(row.volume_24hr)}</td>}
+                        <td>{fmtDec(row.churn_rate, 4)}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {Array.isArray(heatData.data) && heatData.data.length === 0 && !heatData.loading && (
+            <span className="muted">No market heat data available.</span>
+          )}
+        </div>
+      </div>
+
+      {/* ═══ TRADABILITY SCORE ═══ */}
+      <div className="panel" style={{ marginTop: '1.5rem', marginBottom: '2rem' }}>
+        <div className="panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div className="panel-title">Tradability Score</div>
+          <div className="signals-controls">
+            <label>
+              Limit
+              <select value={tradeLimit} onChange={(e) => setTradeLimit(Number(e.target.value))}>
+                {[20, 50, 100, 200].map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </label>
+          </div>
+        </div>
+        <div className="panel-body">
+          {tradeData.loading && renderLoading('Loading tradability scores…')}
+          {renderError(tradeData.error)}
+          {Array.isArray(tradeData.data) && tradeData.data.length > 0 && (
+            <div className="markets-table-scroll">
+              <table className="markets-table">
+                <thead>
+                  <tr>
+                    <th>{platform === 'kalshi' ? 'Ticker' : 'Question'}</th>
+                    {platform === 'kalshi' && <th>Title</th>}
+                    {platform === 'poly' && <th>Category</th>}
+                    <th>Volume</th>
+                    {platform === 'kalshi' && <th>OI</th>}
+                    {platform === 'poly' && <th>Liquidity</th>}
+                    {platform === 'kalshi' && <th>Yes Bid</th>}
+                    {platform === 'kalshi' && <th>Yes Ask</th>}
+                    {platform === 'poly' && <th>Yes Price</th>}
+                    {platform === 'kalshi' && <th>Spread</th>}
+                    <th>Tradability</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tradeData.data.map((row, idx) => {
+                    const isKalshi = platform === 'kalshi'
+                    return (
+                      <tr key={(isKalshi ? row.market_ticker : row.condition_id) ?? idx}>
+                        <td>{isKalshi ? row.market_ticker : row.question}</td>
+                        {isKalshi && <td>{row.title}</td>}
+                        {!isKalshi && <td>{row.category ?? '—'}</td>}
+                        <td>{fmtNum(row.volume)}</td>
+                        {isKalshi && <td>{fmtNum(row.open_interest)}</td>}
+                        {!isKalshi && <td>{fmtNum(row.liquidity)}</td>}
+                        {isKalshi && <td>{fmtDec(row.yes_bid, 0)}</td>}
+                        {isKalshi && <td>{fmtDec(row.yes_ask, 0)}</td>}
+                        {!isKalshi && <td>{fmtPct(row.outcome_yes_price)}</td>}
+                        {isKalshi && <td>{fmtDec(row.spread_ticks, 1)}</td>}
+                        <td>{fmtDec(row.tradability_score, 4)}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {Array.isArray(tradeData.data) && tradeData.data.length === 0 && !tradeData.loading && (
+            <span className="muted">No tradability data available.</span>
+          )}
         </div>
       </div>
     </div>
@@ -3130,14 +3630,17 @@ function App() {
           <NavLink to="/vol-index" className={({ isActive }) => 'app-link' + (isActive ? ' active' : '')}>
             Vol Index
           </NavLink>
+          <NavLink to="/signals" className={({ isActive }) => 'app-link' + (isActive ? ' active' : '')}>
+            Signals
+          </NavLink>
           <div className={`nav-dropdown${screenerActive ? ' nav-dropdown--active' : ''}`}>
             <span className="app-link nav-dropdown-trigger">Screeners ▾</span>
             <div className="nav-dropdown-menu">
               <NavLink to="/screener" className={({ isActive }) => 'app-link nav-dropdown-item' + (isActive ? ' active' : '')}>
-                Kalshi Screener <span className="coming-soon-badge">Coming Soon</span>
+                Kalshi Screener
               </NavLink>
               <NavLink to="/poly-screener" className={({ isActive }) => 'app-link nav-dropdown-item' + (isActive ? ' active' : '')}>
-                Poly Screener <span className="coming-soon-badge">Coming Soon</span>
+                Poly Screener
               </NavLink>
             </div>
           </div>
@@ -3151,6 +3654,7 @@ function App() {
           <Route path="/poly-dashboard" element={<PolyDashboard />} />
           <Route path="/poly-screener" element={<PolyScreenerPage />} />
           <Route path="/vol-index" element={<VolIndexPage />} />
+          <Route path="/signals" element={<SignalsPage />} />
         </Routes>
       </main>
     </div>

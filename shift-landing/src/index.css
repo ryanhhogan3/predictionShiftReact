@@ -2163,3 +2163,91 @@ h1 {
     padding: 0.4rem 0.65rem;
   }
 }
+
+/* ─── Signals Page ────────────────────────────────────────────────────────── */
+
+.signals-platform-toggle {
+  display: flex;
+  gap: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  width: fit-content;
+  margin: 1rem auto 0;
+}
+
+.signals-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 1.2rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.5);
+  border: none;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+  font-family: var(--font-sans);
+}
+
+.signals-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.signals-toggle-btn.active {
+  background: rgba(99, 102, 241, 0.15);
+  color: #a5b4fc;
+}
+
+.signals-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.signals-controls label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 500;
+}
+
+.signals-controls select,
+.signals-controls input[type="number"] {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: #e2e8f0;
+  font-size: 0.72rem;
+  padding: 0.3rem 0.45rem;
+  font-family: var(--font-sans);
+}
+
+.signals-controls select:focus,
+.signals-controls input[type="number"]:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+}
+
+.signals-page .panel + .panel {
+  margin-top: 1.5rem;
+}
+
+@media (max-width: 640px) {
+  .signals-platform-toggle {
+    width: 100%;
+  }
+  .signals-toggle-btn {
+    flex: 1;
+    justify-content: center;
+  }
+  .signals-controls {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
