@@ -3266,10 +3266,10 @@ function SignalsPage() {
   const [platform, setPlatform] = useState('kalshi')
   const [movesHours, setMovesHours] = useState(1)
   const [movesMinVol, setMovesMinVol] = useState(0)
-  const [movesLimit, setMovesLimit] = useState(50)
-  const [oppLimit, setOppLimit] = useState(50)
-  const [heatLimit, setHeatLimit] = useState(50)
-  const [tradeLimit, setTradeLimit] = useState(50)
+  const [movesLimit, setMovesLimit] = useState(10)
+  const [oppLimit, setOppLimit] = useState(10)
+  const [heatLimit, setHeatLimit] = useState(10)
+  const [tradeLimit, setTradeLimit] = useState(10)
 
   // ── Biggest Moves ──
   const kalshiMoves = useApi('/signals/biggest-moves', { limit: movesLimit, hours: movesHours, min_volume: movesMinVol })
@@ -3352,7 +3352,7 @@ function SignalsPage() {
             <label>
               Limit
               <select value={movesLimit} onChange={(e) => setMovesLimit(Number(e.target.value))}>
-                {[20, 50, 100, 200].map((n) => <option key={n} value={n}>{n}</option>)}
+                {[5, 10].map((n) => <option key={n} value={n}>{n}</option>)}
               </select>
             </label>
           </div>
@@ -3419,7 +3419,7 @@ function SignalsPage() {
             <label>
               Limit
               <select value={oppLimit} onChange={(e) => setOppLimit(Number(e.target.value))}>
-                {[20, 50, 100, 200].map((n) => <option key={n} value={n}>{n}</option>)}
+                {[5, 10].map((n) => <option key={n} value={n}>{n}</option>)}
               </select>
             </label>
           </div>
@@ -3492,7 +3492,7 @@ function SignalsPage() {
             <label>
               Limit
               <select value={heatLimit} onChange={(e) => setHeatLimit(Number(e.target.value))}>
-                {[20, 50, 100, 200].map((n) => <option key={n} value={n}>{n}</option>)}
+                {[5, 10].map((n) => <option key={n} value={n}>{n}</option>)}
               </select>
             </label>
           </div>
@@ -3545,7 +3545,7 @@ function SignalsPage() {
             <label>
               Limit
               <select value={tradeLimit} onChange={(e) => setTradeLimit(Number(e.target.value))}>
-                {[20, 50, 100, 200].map((n) => <option key={n} value={n}>{n}</option>)}
+                {[5, 10].map((n) => <option key={n} value={n}>{n}</option>)}
               </select>
             </label>
           </div>
